@@ -11,15 +11,16 @@ api = api_keys.api_keys()
 client = pymongo.MongoClient(api.mongo)
 # specify the database and collection`
 db = client.test
-counter = 0
 
 def FBP(db):
     df = pd.DataFrame(list(db.btcusd.find({'MONGOKEY':'MARKET_UPDATE',
                                             'product_id':'BTC-USD'})\
-                       .sort([('timestamp', -1)]).limit(50000)))
+                       .sort([('timestamp', 1)]).limit(50000))) #sort from ascending
 
-    df['time'] = pd.to_datetime(df['time'],infer_datetime_format=True)
-    df.rename(columns={'y':'y','time':'ds'}, inplace=True)
+    df['time'] = pd.to_datetime(df['time'],infer_datetime_format=True)    
+    df.set_index('time',drop=True, inplace=True)
+    df = df.resample('min').mean()
+    df['ds'] = df.index.copy(deep=True)
 
     m = Prophet(changepoint_prior_scale=0.0002).fit(df)
     future = m.make_future_dataframe(periods=1, freq='1Min')
@@ -38,7 +39,8 @@ def FBP(db):
     return {**y_hats_0002,**y_hats_002}
 
 def push_mongo(db, y_hats):
-    y_hats.update({'MONGOKEY' : 'FBP_UPDATE'})
+    y_hats.update({'MONGOKEY' : 'FBP_UPDATE','timestamp' : y_hats.get('ds_fcst_0002', time.time())})
+    print(y_hats)
     db.btcusd.insert_one(y_hats)
 
 if __name__ == "__main__":
@@ -46,24 +48,9 @@ if __name__ == "__main__":
     push_mongo(db, y_hats)
     timer = time.time()
     
-    with client.test.btcusd.watch() as stream:
+    while True:
         if time.time() - timer > 30:
             y_hats = FBP(db)
             push_mongo(db, y_hats)
-            counter = 0
             timer = time.time()
-
-        for change in stream:
-            print(change)
-            MONGOKEY = change.get('fullDocument').get('MONGOKEY', None)
-
-            if MONGOKEY != 'FBP_UPDATE':
-                print()
-                counter += 1
-                print(counter)
-
-            if counter >= 5:
-                y_hats = FBP(db)
-                push_mongo(db, y_hats)
-                counter = 0
                 

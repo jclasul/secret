@@ -17,9 +17,6 @@ class myWebsocketClient(gdax.WebsocketClient):
         self.url = "wss://ws-feed.pro.coinbase.com"
         self.products = ["BTC-USD"] #,"ETH-USD"]  
         self.channels = ["full"] #,"full"]      
-        self.api_key = api.api_key
-        self.api_secret = api.secret_key
-        self.api_passphrase = api.passphrase
         self.counter = 0
         print(api.api_key)
     def _listen(self):
@@ -28,9 +25,9 @@ class myWebsocketClient(gdax.WebsocketClient):
             try:              
                 if time.time() - start_t >= 30:
                     # Set a 30 second ping to keep connection alive
-                    print('pinging _listen')
+                    print('pinging _listen', self.counter)
                     self.counter += 1
-                    if counter >= 10:
+                    if self.counter >= 10:
                         self._disconnect()
                     self.ws.ping("keepalive")
                     start_t = time.time()                   
