@@ -1,0 +1,4 @@
+datetime
+gdax==1.0.6
+pymongo==3.7.1
+dnspython==1.15.0
