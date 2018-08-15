@@ -12,10 +12,12 @@ client = pymongo.MongoClient(api.mongo)
 # specify the database and collection`
 db = client.test
 
-def FBP(db):
-    df = pd.DataFrame(list(db.btcusd.find({'MONGOKEY':'MARKET_UPDATE',
-                                            'product_id':'BTC-USD'})\
-                       .sort([('timestamp', 1)]).limit(50000))) #sort from ascending
+def FBP(db,time_delta=432000):  #default value is 5 days
+    df = pd.DataFrame(
+        list(db.btcusd.find({'MONGOKEY':'MARKET_UPDATE',
+                             'product_id':'BTC-USD',
+                             'timestamp' : {'$gt':time.time()-time_delta}})\
+                        .sort([('timestamp', 1)]))) #sort from ascending
 
     df['time'] = pd.to_datetime(df['time'],infer_datetime_format=True)    
     df.set_index('time',drop=True, inplace=True)
