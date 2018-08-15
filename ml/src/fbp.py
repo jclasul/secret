@@ -16,17 +16,26 @@ counter = 0
 def FBP(db):
     df = pd.DataFrame(list(db.btcusd.find({'MONGOKEY':'MARKET_UPDATE',
                                             'product_id':'BTC-USD'})\
-                       .sort([('timestamp', -1)]).limit(20000)))
+                       .sort([('timestamp', -1)]).limit(50000)))
 
     df['time'] = pd.to_datetime(df['time'],infer_datetime_format=True)
     df.rename(columns={'y':'y','time':'ds'}, inplace=True)
 
     m = Prophet(changepoint_prior_scale=0.0002).fit(df)
     future = m.make_future_dataframe(periods=1, freq='1Min')
-    fcst = m.predict(future)
+    fcst_0002 = m.predict(future)
+    fcst_0002 = fcst_0002.rename(columns=lambda x: x + "_fcst_0002")
 
-    y_hats = fcst.iloc[-1][['ds','yhat_lower','yhat_upper','yhat','trend']].to_dict()
-    return y_hats
+    m = Prophet(changepoint_prior_scale=0.002).fit(df)
+    future = m.make_future_dataframe(periods=1, freq='1Min')
+    fcst_002 = m.predict(future)
+    fcst_002 = fcst_002.rename(columns=lambda x: x + "_fcst_002")
+
+    keep_columns = ['ds','yhat_lower','yhat_upper','yhat','trend']
+    
+    y_hats_0002 = fcst_0002.iloc[-1][[col + "_fcst_0002" for col in keep_columns]].to_dict()
+    y_hats_002 = fcst_002.iloc[-1][[col + "_fcst_002" for col in keep_columns]].to_dict()
+    return {**y_hats_0002,**y_hats_002}
 
 def push_mongo(db, y_hats):
     y_hats.update({'MONGOKEY' : 'FBP_UPDATE'})
