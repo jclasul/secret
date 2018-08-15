@@ -4,9 +4,9 @@ from fbprophet import Prophet
 from pymongo import MongoClient
 import pymongo
 import time
-import apies
+import api_keys
 
-api = apies.api()
+api = api_keys.api_keys()
 
 client = pymongo.MongoClient(api.mongo)
 # specify the database and collection`
@@ -14,8 +14,10 @@ db = client.test
 counter = 0
 
 def FBP(db):
-    df = pd.DataFrame(list(db.btcusd.find({'MONGOKEY' : 'MARKET_UPDATE'})\
-        .sort([('timestamp', 1)]).limit(20000)))
+    df = pd.DataFrame(list(db.btcusd.find({'MONGOKEY':'MARKET_UPDATE',
+                                            'product_id':'BTC-USD'})\
+                       .sort([('timestamp', -1)]).limit(20000)))
+
     df['time'] = pd.to_datetime(df['time'],infer_datetime_format=True)
     df.rename(columns={'y':'y','time':'ds'}, inplace=True)
 
@@ -55,6 +57,4 @@ if __name__ == "__main__":
                 y_hats = FBP(db)
                 push_mongo(db, y_hats)
                 counter = 0
-
                 
-    
