@@ -7,28 +7,23 @@ import json
 
 api = api_keys.api_keys()
 mongo_client = MongoClient(api.mongo) #change for mongo
-print(api.mongo)
 
 # specify the database and collection
-db = mongo_client.test #change for mongo
+db = mongo_client.gdax.gdaxws #change for mongo
 
 class myWebsocketClient(gdax.WebsocketClient):
     def on_open(self):
         self.url = "wss://ws-feed.pro.coinbase.com"
-        self.products = ["BTC-USD"] #,"ETH-USD"]  
-        self.channels = ["full"] #,"full"]      
-        self.counter = 0
-        print(api.api_key)
+        self.products = ["ETH-BTC","ETC-BTC","LTC-BTC","BTC-USD"] #,"ETH-USD"]  
+        self.channels = ["full","full","full","full"] #,"full"]    
+
     def _listen(self):
         start_t = time.time()
         while not self.stop:
             try:              
                 if time.time() - start_t >= 30:
                     # Set a 30 second ping to keep connection alive
-                    print('pinging _listen', self.counter)
-                    self.counter += 1
-                    if self.counter >= 10:
-                        self._disconnect()
+                    print('pinging _listen')
                     self.ws.ping("keepalive")
                     start_t = time.time()                   
 
@@ -47,6 +42,7 @@ class myWebsocketClient(gdax.WebsocketClient):
 
     def on_message(self, msg):
         OT = msg.get('order_type', None)
+        #print(OT) #debudding 
 
         if OT == 'market':
             current_time = time.time() 
@@ -56,10 +52,7 @@ class myWebsocketClient(gdax.WebsocketClient):
                 msg['y'] = msg['funds'] / msg['size']
 
                 if msg['y'] > 0:
-                    print(msg.get('y', 'no calc price'),
-                            msg.get('product_id', 'no product id'))
-                    mongo_collection = db.btcusd
-
+                    # print(msg.get('y', 'no calc price'),msg.get('product_id', 'no product id'))
                     msg['_id'] = msg['order_id']
                     popcolumns = ['order_id','client_oid','price']
                     for popcolumn in popcolumns:
@@ -69,8 +62,8 @@ class myWebsocketClient(gdax.WebsocketClient):
                     msg['timestamp'] = time.time()  
                     msg['MONGOKEY'] = 'MARKET_UPDATE' 
                     try:
-                        mongo_collection.insert_one(msg)
-                        self.counter = 0
+                        db.insert_one(msg)
+                        print(msg.get('y', None))
                     except Exception:
                         print('exception in parsing message to mongodb')
                         print(msg)
