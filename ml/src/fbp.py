@@ -52,7 +52,11 @@ if __name__ == "__main__":
     
     while True:
         if time.time() - timer > 30:
-            y_hats = FBP(db)
-            push_mongo(db, y_hats)
-            timer = time.time()
+            try:
+                y_hats = FBP(db)
+                push_mongo(db, y_hats)
+                timer = time.time()
+            except:
+                time.sleep(4)
+                timer = time.time()
                 
