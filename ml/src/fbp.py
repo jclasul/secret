@@ -12,7 +12,7 @@ client = pymongo.MongoClient(api.mongo)
 # specify the database and collection`
 db = client.test
 
-def FBP(db,time_delta=432000):  #default value is 5 days
+def FBP(db,time_delta=3600*24):  #default value is 5 days
     df = pd.DataFrame(
         list(db.btcusd.find({'MONGOKEY':'MARKET_UPDATE',
                              'product_id':'BTC-USD',
