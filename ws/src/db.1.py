@@ -23,7 +23,7 @@ class myWebsocketClient(gdax.WebsocketClient):
             try:              
                 if time.time() - start_t >= 30:
                     # Set a 30 second ping to keep connection alive
-                    print('pinging _listen')
+                    print(time.ctime(),'pinging _listen')
                     self.ws.ping("keepalive")
                     start_t = time.time()                   
 
@@ -63,10 +63,9 @@ class myWebsocketClient(gdax.WebsocketClient):
                     msg['MONGOKEY'] = 'MARKET_UPDATE' 
                     try:
                         db.insert_one(msg)
-                        print(msg.get('y', None))
+                        print(time.ctime(),' price at {}'.format(msg.get('y', None)))
                     except Exception:
-                        print('exception in parsing message to mongodb')
-                        print(msg)
+                        print(time.ctime(),'exception in parsing message to mongodb')
   
     def _disconnect(self):
         try:
