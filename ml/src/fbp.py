@@ -41,7 +41,7 @@ def FBP(db,time_delta=432000):  #default value is 5 days
     return {**y_hats_0002,**y_hats_002}
 
 def push_mongo(db, y_hats):
-    y_hats.update({'MONGOKEY' : 'FBP_UPDATE','timestamp' : y_hats.get('ds_fcst_0002', time.time())})
+    y_hats.update({'MONGOKEY':'FBP_UPDATE','timestamp':time.time()})
     print(y_hats)
     db.btcusd.insert_one(y_hats)
 
