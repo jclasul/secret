@@ -1,4 +1,5 @@
 from pymongo import MongoClient
+from bson.objectid import ObjectId
 import time
 import api_keys
 import requests
@@ -6,6 +7,7 @@ import gdax
 import random as random
 import json
 import pandas as pd
+import numpy as np
 
 api = api_keys.api_keys()
 
@@ -20,12 +22,13 @@ b64secret = api.secret_key
 passphrase = api.passphrase
 
 class clearingmaster():
-    def __init__(self, maxopenbuyorders = 4 ,**kwargs):
+    def __init__(self, maxopenbuyorders = 20 ,**kwargs):
         self.maxopenbuyorders = maxopenbuyorders
         self.heartbeat_rate = 100  # seconds before we auto cancel limit order
         self.marketBTCUSD = client.get_product_ticker("BTC-USD")
         self.marketBTCEUR = client.get_product_ticker("BTC-EUR")
         self.exchangerate = float(self.marketBTCEUR["price"]) / float(self.marketBTCUSD["price"])
+        print(self.exchangerate)
 
     def getorders(self):
         """{'id': 'e22c9172-0276-47f7-b774-2559784c26aa', 'price': '999.85000000', 
@@ -36,10 +39,15 @@ class clearingmaster():
             'status': 'open', 'settled': False}"""
     
         openorders = client.get_orders()[0]
-        df_openorders = pd.DataFrame(openorders).query('product_id == "BTC-EUR"')
-        df_openorders['created_at'] = pd.to_datetime(df_openorders['created_at'])
-        self.df_openorders = df_openorders
-        #print('DAXY DEBUG', self.df_openorders)
+        try:
+            df_openorders = pd.DataFrame(openorders).query('product_id == "BTC-EUR"')
+            df_openorders['created_at'] = pd.to_datetime(df_openorders['created_at'])
+            self.df_openorders = df_openorders
+            return True     # df contains orders
+        except:
+            print('DAXY no orders on books')
+            self.df_openorders = pd.DataFrame(None)
+            return False    # df will be empty
         
     def getbalances(self):
         """{'id': '459d001f-0391-4e97-89e7-ae474275e2c9', 'currency': 'BTC',
@@ -51,7 +59,7 @@ class clearingmaster():
         df_balances.rename(columns=df_balances.loc['currency'], inplace=True)
         
         l = ['available','balance','hold']        
-        self.df_balances = client.cm_.df_balances.loc[l].astype('float')
+        self.df_balances = df_balances.loc[l].astype('float')
         #print('DAXY DEBUG', self.df_balances)
 
     def getclearance(self, kwargs_dict):
@@ -68,19 +76,24 @@ class clearingmaster():
         if self.df_balances['EUR']['available'] <= orderprice:
             print('DAXY CM insufficient funds')
             return False
-        elif len() >= self.maxopenbuyorders:
+        elif len(self.df_openorders) >= self.maxopenbuyorders:
             print('DAXY CM maximum limit orders reached')
             return False
         else:
             return True
 
     def heartbeat(self, **kwargs):
-        self.getorders()
-        cutoffdate = pd.to_datetime(time.time()-self.heartbeat_rate, unit='s')
-        to_terminate = self.df_openorders[self.df_openorders["created_at"]<cutoffdate]['id']
-        for idtoterminate in to_terminate:
-            response_cancel = client.cancel_order(idtoterminate) 
-            print('DAXY CANCELLED old order : {}'.format(response_cancel))
+        has_orders = self.getorders()
+        if has_orders is True:
+            cutoffdate = pd.to_datetime(time.time()-self.heartbeat_rate, unit='s')
+            to_terminate = self.df_openorders[self.df_openorders["created_at"]<cutoffdate]['id']
+            for idtoterminate in to_terminate:
+                response_cancel = client.cancel_order(idtoterminate) 
+                db.delete_one({'MONGOKEY':'BUY_ORDER',
+                               'trade_id': idtoterminate})
+                print('DAXY CANCELLED old order : {}'.format(response_cancel))
+
+        print('DAXY HB')
 
 class GAC(gdax.AuthenticatedClient):
     def __clearingmaster__(self):
@@ -113,6 +126,7 @@ class GAC(gdax.AuthenticatedClient):
 
         kwargs["side"] = "buy"
         kwargs["type"] = "limit"
+        kwargs["price"] = np.round(kwargs['price'] * self.cm_.exchangerate, 2)
         trade_request = self.cm_.getclearance(kwargs_dict=kwargs)
         
         if trade_request == True:
@@ -121,12 +135,13 @@ class GAC(gdax.AuthenticatedClient):
                             auth=self.auth,
                             timeout=30)
 
-            print(r)
-            r = r.json()
-            r.update({'MONGOKEY':'BUY_ORDER','timestamp':time.time()})
-            db.insert_one(r)
-            print('DAXY BOUGHT inserted in mongo')
-            return r
+            rjson = r.json()
+            print(rjson)
+            rjson.update({'MONGOKEY':'BUY_ORDER','timestamp':time.time(),'trade_id':rjson['id']})
+            rjson.pop('id', None)
+            db.insert_one(rjson)
+            print('DAXY BOUGHT inserted in mongo\n{}'.format(rjson.get('price', None)))
+            return rjson
         else:
             print('DAXY CM no permission')
 
@@ -143,10 +158,10 @@ class GAC(gdax.AuthenticatedClient):
                           auth=self.auth,
                           timeout=30)
 
-        print('SOLD !!')
-        print(r)
-        r.update({'MONGOKEY':'SELL_ORDER','timestamp':time.time()})
-        db.insert_one(r.json())
+        rjson = r.json()
+        rjson.update({'MONGOKEY':'SELL_ORDER','timestamp':time.time(),'trade_id':rjson['id']})
+        rjson.pop('id', None)
+        db.insert_one(rjson)
         print('DAXY SOLD inserted in mongo')
         return r.json()
 
@@ -156,35 +171,35 @@ if __name__ == "__main__":
                  api_url="https://api.pro.coinbase.com")
     
     client.__clearingmaster__() # set clearing master
-    client.cm_.getorders()
     p_change = {}
-    counter=0
+    counter = 0
 
     with db.watch() as stream:
         for change in stream:
-            if counter >= 3 and change.get('fullDocument').get('MONGOKEY', None) == "FBP_UPDATE" and \
-                    change.get('fullDocument').get('product_id', None) == "BTC-USD":
+            if change.get('fullDocument', None) is not None: 
+                if change.get('fullDocument').get('MONGOKEY', None) == "FBP_UPDATE" and \
+                        change.get('fullDocument').get('product_id', None) == "BTC-USD":
 
-                print('DAXY price at : {}'.format(p_change.get('fullDocument').get('y', None)))
-                keys = ['_id',
-                        'yhat_lower_fcst_0002', 'yhat_lower_fcst_002',
-                        'yhat_upper_fcst_002', 'yhat_upper_fcst_0002']
-                print(time.ctime(),[change.get('fullDocument').get(ckey,None) for ckey in keys])
-                client.cm_.
-                
-                counter = 0
+                    print('DAXY price at : {}'.format(p_change.get('fullDocument').get('y', None)))
+                    keys = ['_id',
+                            'yhat_lower_fcst_0002', 'yhat_lower_fcst_002',
+                            'yhat_upper_fcst_002', 'yhat_upper_fcst_0002']
+                    print(time.ctime(),[change.get('fullDocument').get(ckey,None) for ckey in keys]) 
+                    price_target = 'yhat_lower_fcst_002'
+                    order_price = change.get('fullDocument').get(price_target, 1) 
+                    print(order_price)
+                    client.buy(size=0.001, price=order_price,product_id="BTC-EUR",side="buy",type="limit")            
+                    counter = 0
 
-            elif random.random() > 0.7: # update set limits
-                client.cm_.heartbeat()
+                if change.get('fullDocument').get('MONGOKEY', None) == "MARKET_UPDATE" and \
+                        change.get('fullDocument').get('product_id', None) == "BTC-USD":
 
-            if change.get('fullDocument').get('MONGOKEY', None) == "MARKET_UPDATE" and \
-                    change.get('fullDocument').get('product_id', None) == "BTC-USD":
+                    counter += 1
+                    keys = ['_id','y']
+                    print('{0} +DAXY price at : {1} - {2}'.\
+                        format(time.ctime(),change.get('fullDocument').get('y',None), counter))
 
-                counter += 1
-                keys = ['_id','y']
-                print('{0} +DAXY price at : {1} - {2}'.\
-                    format(time.ctime(),change.get('fullDocument').get('y',None), counter))
+                    p_change = change
 
-                p_change = change
-
-            
+                    if random.random() < 0.15:
+                        client.cm_.heartbeat()
