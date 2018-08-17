@@ -3,6 +3,7 @@ import time
 import api_keys
 import requests
 import gdax
+import random as random
 import json
 import pandas as pd
 
@@ -21,6 +22,7 @@ passphrase = api.passphrase
 class clearingmaster():
     def __init__(self, maxopenbuyorders = 4 ,**kwargs):
         self.maxopenbuyorders = maxopenbuyorders
+        self.heartbeat_rate = 100  # seconds before we auto cancel limit order
         self.marketBTCUSD = client.get_product_ticker("BTC-USD")
         self.marketBTCEUR = client.get_product_ticker("BTC-EUR")
         self.exchangerate = float(self.marketBTCEUR["price"]) / float(self.marketBTCUSD["price"])
@@ -33,8 +35,10 @@ class clearingmaster():
             'filled_size': '0.00000000', 'executed_value': '0.0000000000000000', 
             'status': 'open', 'settled': False}"""
     
-        self.openorders = client.get_orders()[0]
-        self.df_openorders = pd.DataFrame(self.openorders)
+        openorders = client.get_orders()[0]
+        df_openorders = pd.DataFrame(openorders).query('product_id == "BTC-EUR"')
+        df_openorders['created_at'] = pd.to_datetime(df_openorders['created_at'])
+        self.df_openorders = df_openorders
         #print('DAXY DEBUG', self.df_openorders)
         
     def getbalances(self):
@@ -42,8 +46,12 @@ class clearingmaster():
             'balance': '0.0530287336346057', 'available': '0.0530287336346057',
             'hold': '0.0000000000000000', 'profile_id': '5100622b-3ed2-49e4-9810-c28fb96d30b3'} """
 
-        self.balances = client.get_accounts()
-        self.df_balances = pd.DataFrame(self.balances)
+        balances = client.get_accounts()
+        df_balances = pd.DataFrame(balances).query('currency in ("BTC","EUR")').T
+        df_balances.rename(columns=df_balances.loc['currency'], inplace=True)
+        
+        l = ['available','balance','hold']        
+        self.df_balances = client.cm_.df_balances.loc[l].astype('float')
         #print('DAXY DEBUG', self.df_balances)
 
     def getclearance(self, kwargs_dict):
@@ -57,14 +65,22 @@ class clearingmaster():
             print('DAXY CM KeyError rejecting order request')
             return False
 
-        if float(self.df_balances[self.df_balances['currency']=='EUR'].iloc[0,0]) <= orderprice:
+        if self.df_balances['EUR']['available'] <= orderprice:
             print('DAXY CM insufficient funds')
             return False
-        elif len(self.df_openorders[self.df_openorders['side'].str.lower() == 'buy']) >= self.maxopenbuyorders:
+        elif len() >= self.maxopenbuyorders:
             print('DAXY CM maximum limit orders reached')
             return False
         else:
             return True
+
+    def heartbeat(self, **kwargs):
+        self.getorders()
+        cutoffdate = pd.to_datetime(time.time()-self.heartbeat_rate, unit='s')
+        to_terminate = self.df_openorders[self.df_openorders["created_at"]<cutoffdate]['id']
+        for idtoterminate in to_terminate:
+            response_cancel = client.cancel_order(idtoterminate) 
+            print('DAXY CANCELLED old order : {}'.format(response_cancel))
 
 class GAC(gdax.AuthenticatedClient):
     def __clearingmaster__(self):
@@ -144,7 +160,7 @@ if __name__ == "__main__":
     p_change = {}
     counter=0
 
-    '''with db.watch() as stream:
+    with db.watch() as stream:
         for change in stream:
             if counter >= 3 and change.get('fullDocument').get('MONGOKEY', None) == "FBP_UPDATE" and \
                     change.get('fullDocument').get('product_id', None) == "BTC-USD":
@@ -154,8 +170,12 @@ if __name__ == "__main__":
                         'yhat_lower_fcst_0002', 'yhat_lower_fcst_002',
                         'yhat_upper_fcst_002', 'yhat_upper_fcst_0002']
                 print(time.ctime(),[change.get('fullDocument').get(ckey,None) for ckey in keys])
+                client.cm_.
                 
                 counter = 0
+
+            elif random.random() > 0.7: # update set limits
+                client.cm_.heartbeat()
 
             if change.get('fullDocument').get('MONGOKEY', None) == "MARKET_UPDATE" and \
                     change.get('fullDocument').get('product_id', None) == "BTC-USD":
@@ -165,4 +185,6 @@ if __name__ == "__main__":
                 print('{0} +DAXY price at : {1} - {2}'.\
                     format(time.ctime(),change.get('fullDocument').get('y',None), counter))
 
-                p_change = change'''
+                p_change = change
+
+            
