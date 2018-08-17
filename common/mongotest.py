@@ -13,4 +13,5 @@ if __name__ == "__main__":
     with db.gdaxws.watch() as stream:
         for change in stream:
             print(change.get('fullDocument').get('MONGOKEY', None),
-                             change.get('fullDocument').get('_id', None))
+                             change.get('fullDocument').get('_id', None),
+                             change.get('fullDocument').get('y'), None)

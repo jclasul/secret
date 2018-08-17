@@ -14,8 +14,8 @@ db = mongo_client.gdax.gdaxws #change for mongo
 class myWebsocketClient(gdax.WebsocketClient):
     def on_open(self):
         self.url = "wss://ws-feed.pro.coinbase.com"
-        self.products = ["ETH-BTC","ETC-BTC","LTC-BTC","BTC-USD"] #,"ETH-USD"]  
-        self.channels = ["full","full","full","full"] #,"full"]    
+        self.products = ["BTC-USD","ETH-USD"] #,"ETH-USD"]  
+        self.channels = ["full","full"] #,"full"]    
 
     def _listen(self):
         start_t = time.time()
