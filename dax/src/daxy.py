@@ -18,28 +18,9 @@ key = api.api_key
 b64secret = api.secret_key
 passphrase = api.passphrase
 
-class GAC(gdax.AuthenticatedClient):
-    def buy(self, **kwargs):
-        kwargs["side"] = "buy"
-        r = requests.post(self.url + '/orders',
-                          data=json.dumps(kwargs),
-                          auth=self.auth,
-                          timeout=30)
-
-        print(r)
-        return r.json()
-
-    def sell(self, **kwargs):
-        kwargs["side"] = "sell"
-        r = requests.post(self.url + '/orders',
-                          data=json.dumps(kwargs),
-                          auth=self.auth,
-                          timeout=30)
-
-        print('SOLD !!')
-        print(r)
-        db.orders.insert_one(r.json())
-        return r.json()
+class clearingmaster():
+    def __init__(self, maxopenbuyorders = 3 ,**kwargs):
+        self.maxopenbuyorders = maxopenbuyorders
 
     def getorders(self):
         """{'id': 'e22c9172-0276-47f7-b774-2559784c26aa', 'price': '999.85000000', 
@@ -62,14 +43,80 @@ class GAC(gdax.AuthenticatedClient):
         self.df_balances = pd.DataFrame(self.balances)
         print('DAXY DEBUG', self.df_balances)
 
+    def getclearance(self):
+        if self.
+        return False
+
+class GAC(gdax.AuthenticatedClient):
+    def __clearingmaster__(self):
+        self.cm_ = clearingmaster()
+
+    def buy(self, price, ordersize, **kwargs):
+        """client.buy(size="0.005000000",
+                product_id="BTC-EUR",
+                side="buy",
+                stp="dc",
+                type="limit")
+                
+            from CB PRO website
+                {"id": "d0c5340b-6d6c-49d9-b567-48c4bfca13d2",
+                "price": "0.10000000",
+                "size": "0.01000000",
+                "product_id": "BTC-USD",
+                "side": "buy",
+                "stp": "dc",
+                "type": "limit",
+                "time_in_force": "GTC",
+                "post_only": false,
+                "created_at": "2016-12-08T20:02:28.53864Z",
+                "fill_fees": "0.0000000000000000",
+                "filled_size": "0.00000000",
+                "executed_value": "0.0000000000000000",
+                "status": "pending",
+                "settled": false}"""
+                
+        kwargs["side"] = "buy"
+        trade_request = self.cm_.getclearance()
+        
+        if trade_request == True:
+            r = requests.post(self.url + '/orders',
+                            data=json.dumps(kwargs),
+                            auth=self.auth,
+                            timeout=30)
+
+            print(r)
+            return r.json()
+        else:
+            print('DAXY CM no permission')
+
+    def sell(self, **kwargs):
+        """client.sell(size="0.005000000",
+                product_id="BTC-EUR",
+                side="sell",
+                stp="dc",
+                type="limit")"""
+
+        kwargs["side"] = "sell"
+        r = requests.post(self.url + '/orders',
+                          data=json.dumps(kwargs),
+                          auth=self.auth,
+                          timeout=30)
+
+        print('SOLD !!')
+        print(r)
+        db.orders.insert_one(r.json())
+        return r.json()
+
 if __name__ == "__main__":
     client = GAC(key=key,b64secret=b64secret,
                  passphrase=passphrase,
                  api_url="https://api.pro.coinbase.com")
     
-    client.getbalances()
-    client.getorders()
+    client.__clearingmaster__() # set clearing master
+    client.cm_.getorders()
     p_change = {}
+
+      
 
     """with db.watch() as stream:
         for change in stream:
