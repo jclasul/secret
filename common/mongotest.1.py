@@ -13,7 +13,7 @@ if __name__ == "__main__":
     with db.gdaxws.watch() as stream:
         for change in stream:
             if change.get('fullDocument').get('MONGOKEY', None) == "FBP_UPDATE":
-                keys = ['MONGOKEY','_id',
-                        'yhat_lower_fcst_002', 'yhat_lower_fcst_0002',
+                keys = ['_id',
+                        'yhat_lower_fcst_0002', 'yhat_lower_fcst_002',
                         'yhat_upper_fcst_002', 'yhat_upper_fcst_0002']
                 print(time.ctime(),[change.get('fullDocument').get(ckey,None) for ckey in keys])

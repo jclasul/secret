@@ -1,15 +1,16 @@
 from pymongo import MongoClient
-import requests
 import time
+import api_keys
+import requests
 import gdax
-import apies
 import json
 
-api = apies.api()
-mongo_client = MongoClient(api.mongo) #change for mongo
+api = api_keys.api_keys()
 
-# specify the database and collection
-db = mongo_client.test #change for mongo
+client = MongoClient(api.mongo)
+# specify the database and collection`
+db = client.gdax.gdaxws
+print('connected to mongo collection')
 
 # and store in local variables
 key = api.api_key
@@ -38,14 +39,11 @@ class GAC(gdax.AuthenticatedClient):
         print(r)
         db.orders.insert_one(r.json())
         return r.json()
+    
+    def pingexchange(self):
+        pass
 
 if __name__ == "__main__":
-    client = GAC(key=key,b64secret=b64secret,\
-                 passphrase=passphrase,\
+    client = GAC(key=key,b64secret=b64secret,
+                 passphrase=passphrase,
                  api_url="https://api.pro.coinbase.com")
-
-    client.sell(size="0.005000000",
-                product_id="BTC-EUR",
-                side="sell",
-                stp="dc",
-                type="market")
