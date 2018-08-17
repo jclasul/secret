@@ -40,10 +40,40 @@ class GAC(gdax.AuthenticatedClient):
         db.orders.insert_one(r.json())
         return r.json()
     
-    def pingexchange(self):
-        pass
+    def getbalance(self):
+        """{'id': '459d001f-0391-4e97-89e7-ae474275e2c9', 'currency': 'BTC',
+            'balance': '0.0530287336346057', 'available': '0.0530287336346057',
+            'hold': '0.0000000000000000', 'profile_id': '5100622b-3ed2-49e4-9810-c28fb96d30b3'} """
+
+        self.balances = client.get_accounts()
+        self.balance_BTC = next(item for item in self.balances if item["currency"] == "BTC")
+        self.balance_ETH = next(item for item in self.balances if item["currency"] == "ETH")
+        self.balance_EUR = next(item for item in self.balances if item["currency"] == "EUR")
+        print('EUR balance at {}'.format(self.balance_EUR.get('balance', None)))
+        print('BTC balance at {}'.format(self.balance_BTC.get('balance', None)))
 
 if __name__ == "__main__":
     client = GAC(key=key,b64secret=b64secret,
                  passphrase=passphrase,
                  api_url="https://api.pro.coinbase.com")
+    
+    client.getbalance()
+    counter = 0
+    p_change = {}
+
+    with db.watch() as stream:
+        for change in stream:
+            if change.get('fullDocument').get('MONGOKEY', None) == "MARKET_UPDATE" and \
+                    change.get('fullDocument').get('product_id', None) == "BTC-USD":
+
+                counter += 1
+                keys = ['_id','y']
+                print(time.ctime(),[change.get('fullDocument').get(ckey,None) for ckey in keys], counter)
+
+                if counter >= 3:
+                    print('DAXY DEBUGGING: running limit loop')
+                    print(p_change.get('fullDocument', None).get('y', None))
+                    print(change.get('fullDocument', None).get('y', None))
+                    counter = 0
+                
+                p_change = change
