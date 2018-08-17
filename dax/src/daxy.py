@@ -63,17 +63,23 @@ if __name__ == "__main__":
 
     with db.watch() as stream:
         for change in stream:
+            if counter >= 3 and change.get('fullDocument').get('MONGOKEY', None) == "FBP_UPDATE" and \
+                    change.get('fullDocument').get('product_id', None) == "BTC-USD":
+
+                print('DAXY DEBUGGING: running limit loop')
+                print('DAXY price at : {}'.format(p_change.get('fullDocument').get('y', None)))
+                keys = ['_id',
+                        'yhat_lower_fcst_0002', 'yhat_lower_fcst_002',
+                        'yhat_upper_fcst_002', 'yhat_upper_fcst_0002']
+                print(time.ctime(),[change.get('fullDocument').get(ckey,None) for ckey in keys])
+                counter = 0
+
             if change.get('fullDocument').get('MONGOKEY', None) == "MARKET_UPDATE" and \
                     change.get('fullDocument').get('product_id', None) == "BTC-USD":
 
                 counter += 1
                 keys = ['_id','y']
-                print(time.ctime(),[change.get('fullDocument').get(ckey,None) for ckey in keys], counter)
+                print('{0}DAXY price at : {1} - {2}'.\
+                    format(time.ctime(),change.get('fullDocument').get('y',None), counter))
 
-                if counter >= 3:
-                    print('DAXY DEBUGGING: running limit loop')
-                    print(p_change.get('fullDocument', None).get('y', None))
-                    print(change.get('fullDocument', None).get('y', None))
-                    counter = 0
-                
                 p_change = change
