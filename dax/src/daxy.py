@@ -78,8 +78,9 @@ class clearingmaster():
         self.getbalances()
         print('=/DAXY CM {}'.format(kwargs_dict['side']))
         funds_available_btc = self.df_balances['BTC']['available'] 
-        print('=/DAXY CM {} funds BTC available: {:0.3f}'.format(kwargs_dict['side'], funds_available_btc))
-        self.order_size = np.maximum(funds_available_btc * np.random.random() * 0.3, 0.001)
+        funds_available_eur = self.df_balances['EUR']['available']
+
+        self.order_size = np.maximum(funds_available_eur/kwargs_dict["price"] * np.random.random() * 0.25, 0.001)
 
         try:
             orderprice = kwargs_dict['price'] * self.order_size
@@ -88,10 +89,11 @@ class clearingmaster():
             print('=/DAXY CM {} KeyError'.format(kwargs_dict['side']))
             return False
 
-        if kwargs_dict['side'] == 'buy' and self.df_balances['EUR']['available'] > orderprice:
+        if kwargs_dict['side'] == 'buy' and funds_available_eur > orderprice:
             return True
 
         if kwargs_dict['side'] == 'sell' and funds_available_btc > 0.001:
+            self.order_size = np.maximum(funds_available_btc * np.random.random() * 0.3, 0.001)
             return True
         
         return False
@@ -216,26 +218,26 @@ if __name__ == "__main__":
                         print('{0} +DAXY price at : {1} - {2}'.\
                             format(NOW, lastknowprice, counter))
 
-            if random.random() < 0.30:
+            if random.random() < 0.20:
                 NOW = time.time()
                 if NOW - hbcounter >= random_wait:
                     client.cm_.heartbeat(NOW=NOW)
                     hbcounter = NOW
-                    random_wait = np.random.randint(4,40)
+                    random_wait = np.random.randint(10,20)
 
-                    if lastknowprice is not 0 and order_price is not 0 \
-                            and sell_price is not 0 and counter < 10:  
-                        print('+DAXY ORDER LOOP')
-                        random_order = np.random.random()
+                if lastknowprice is not 0 and order_price is not 0 \
+                        and sell_price is not 0 and counter < 20:  
+                    print('+DAXY ORDER LOOP')
+                    random_order = np.random.random()
 
-                        if random_order > 0.5:
-                            client.ORDER(lastknowprice, size=0, price=order_price,
-                                        product_id="BTC-EUR", side="buy", type="limit") 
-                        else:
-                            client.ORDER(lastknowprice, size=0, price=sell_price,
-                                        product_id="BTC-EUR", side="sell", type="limit")
-                                        
-                        counter += 1
-                                                
+                    if random_order > 0.5:
+                        client.ORDER(lastknowprice, size=0, price=order_price,
+                                    product_id="BTC-EUR", side="buy", type="limit") 
                     else:
-                        print('DAXY prices at zero')
+                        client.ORDER(lastknowprice, size=0, price=sell_price,
+                                    product_id="BTC-EUR", side="sell", type="limit")
+                                    
+                    counter += 1
+                                            
+                else:
+                    print('DAXY prices at zero')
