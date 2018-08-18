@@ -44,7 +44,7 @@ class clearingmaster():
             self.df_openorders = df_openorders
             return True     # df contains orders
         except:
-            print('DAXY no orders on books')
+            print('=/DAXY no orders on books')
             self.df_openorders = pd.DataFrame(None)
             return False    # df will be empty
         
@@ -61,35 +61,34 @@ class clearingmaster():
         self.df_balances = df_balances.loc[l].astype('float')
         #print('DAXY DEBUG', self.df_balances)
 
-    def getclearance(self, kwargs_dict):
+    def getclearance_buy(self, kwargs_dict):
+        print('=/DAXY CM BC')
         try:
             orderprice = kwargs_dict['price'] * kwargs_dict['size']
-            print('DAXY CM order received total price: {}'.format(orderprice))
-            self.getbalances()
+            print('=/DAXY CM BC received: {}'.format(orderprice))
         except KeyError:
-            print('DAXY CM KeyError calculating orderprice')
-            print('DAXY CM KeyError rejecting order request')
+            print('=/DAXY CM BC KeyError')
             return False
 
         if self.df_balances['EUR']['available'] <= orderprice:
-            print('DAXY CM insufficient funds')
             return False
         else:
             return True
 
-    def heartbeat_sell(self, kwargs_dict):
-        print('DAXY HBs')
-        self.getbalances()
+    def getclearance_sell(self, kwargs_dict):
+        print('=/DAXY CM SC')
         BTC_available = self.df_balances['BTC']['available'] # balance, holds and available
+        print('=/DAXY CM SC available: {}'.format(BTC_available))
 
         if BTC_available > 0:
-            random_size = np.round(BTC_available * np.random.random(),2)
-            return random_size
+            self.random_size = np.maximum(np.round(BTC_available * np.random.random() * 0.5 ,3), 0.001)
+            print('=/DAXY CM SC size: {}'.format(self.random_size))
+            return True
         else:
             return False
 
     def heartbeat(self, **kwargs):
-        print('DAXY HB')
+        print('+DAXY HB')
         has_orders = self.getorders()
         if has_orders is True:
             cutoffdate = pd.to_datetime(time.time()-self.heartbeat_rate, unit='s')
@@ -97,14 +96,15 @@ class clearingmaster():
             for idtoterminate in to_terminate:
                 response_cancel = client.cancel_order(idtoterminate) 
                 db.delete_one({'MONGOKEY':'BUY_ORDER','trade_id': idtoterminate})
-                print('DAXY CANCELLED old order : {}'.format(response_cancel))
+                print('=DAXY CANCELLED old order : {}'.format(response_cancel))
+        print('-DAXY HB')
 
 class GAC(gdax.AuthenticatedClient):
     def __clearingmaster__(self):
         self.cm_ = clearingmaster()
         self.timeout = 15
 
-    def buy(self, p_change, **kwargs):
+    def ORDER(self, p_change, **kwargs):
         """client.buy(size="0.005000000",
                 product_id="BTC-EUR",
                 side="buy",
@@ -128,15 +128,27 @@ class GAC(gdax.AuthenticatedClient):
                 "status": "pending",
                 "settled": false}"""
 
-        kwargs["side"] = "buy"
+        print('+DAXY ORDER : {}'.format(kwargs.get("side", None)))
         kwargs["type"] = "limit"
+        kwargs["product_id"] = "BTC-EUR"
+        self.cm_.getbalances()
 
-        if kwargs["price"] >= p_change:
-            print('DAXY lower 002 broken')
-            order_price = p_change*0.999
-        kwargs["price"] = np.round(kwargs['price'] * self.cm_.exchangerate, 2)
+        if kwargs["side"] == "sell":
+            if kwargs["price"] <= p_change:
+                print('=DAXY upper 0002 broken')
+                order_price = p_change*1.006
+            kwargs["price"] = np.round(kwargs['price'] * self.cm_.exchangerate, 2)
 
-        trade_request = self.cm_.getclearance(kwargs_dict=kwargs)
+            trade_request = self.cm_.getclearance_sell(kwargs_dict=kwargs)
+            kwargs["size"] = self.cm_.random_size   # overwrite size for SELL orders
+
+        elif kwargs["side"] == "buy":
+            if kwargs["price"] >= p_change:
+                print('=DAXY lower 002 broken')
+                order_price = p_change*0.996
+            kwargs["price"] = np.round(kwargs['price'] * self.cm_.exchangerate, 2)
+            
+            trade_request = self.cm_.getclearance_buy(kwargs_dict=kwargs)
         
         if trade_request == True:
             r = requests.post(self.url + '/orders',
@@ -152,41 +164,10 @@ class GAC(gdax.AuthenticatedClient):
                           'strategy':'ISS'})
             rjson.pop('id', None)
             db.insert_one(rjson)
-            print('DAXY BOUGHT inserted in mongo\n{}'.format(rjson.get('price', None)))
+            print('-DAXY OP {}'.format(kwargs["side"]))
             return rjson
         else:
-            print('DAXY CM no permission')
-
-    def sell(self, p_change, **kwargs):
-        """client.sell(size="0.005000000",
-                product_id="BTC-EUR",
-                side="sell",
-                stp="dc",
-                type="limit")"""
-
-        kwargs["side"] = "sell"
-        kwargs["type"] = "limit"
-
-        if kwargs["price"] <= p_change:
-            print('DAXY lower 002 broken')
-            order_price = p_change*1.006
-        kwargs["price"] = np.round(kwargs['price'] * self.cm_.exchangerate, 2)
-
-        r = requests.post(self.url + '/orders',
-                        data=json.dumps(kwargs),
-                        auth=self.auth,
-                        timeout=30)
-
-        rjson = r.json()
-        print(rjson)
-        rjson.update({'MONGOKEY':'BUY_ORDERS',
-                        'timestamp':time.time(),
-                        'trade_id':rjson['id'],
-                        'strategy':'ISS'})
-        rjson.pop('id', None)
-        db.insert_one(rjson)
-        print('DAXY SOLD inserted in mongo\n{}'.format(rjson.get('price', None)))
-        return rjson
+            print('=DAXY CM {} : NA'.format(kwargs['side']))
 
 if __name__ == "__main__":
     client = GAC(key=key,b64secret=b64secret,
@@ -198,6 +179,9 @@ if __name__ == "__main__":
     counter = 0
     order_price = 0
     hbcounter = time.time()
+    random_wait = np.random.randint(4,40)
+    price_target_lower = 'yhat_lower_fcst_002'
+    price_target_upper = 'yhat_upper_fcst_0002'
 
     with db.watch() as stream:
         for change in stream:
@@ -206,14 +190,13 @@ if __name__ == "__main__":
                     if change.get('fullDocument').get('MONGOKEY') == "FBP_UPDATE" and \
                             change.get('fullDocument').get('product_id', None) == "BTC-USD":
 
-                        print('DAXY price at : {}'.format(p_change))
                         keys = ['_id',
                                 'yhat_lower_fcst_0002', 'yhat_lower_fcst_002',
                                 'yhat_upper_fcst_002', 'yhat_upper_fcst_0002']
                         print(time.ctime(),[change.get('fullDocument').get(ckey,None) for ckey in keys]) 
 
-                        price_target = 'yhat_lower_fcst_002'
-                        order_price = change.get('fullDocument').get(price_target, 1)
+                        order_price = change.get('fullDocument').get(price_target_lower, 1)
+                        sell_price = change.get('fullDocument').get(price_target_upper, 1)
 
                     if change.get('fullDocument').get('MONGOKEY', None) == "MARKET_UPDATE" and \
                             change.get('fullDocument').get('product_id', None) == "BTC-USD":
@@ -223,20 +206,25 @@ if __name__ == "__main__":
                         print('{0} +DAXY price at : {1} - {2}'.\
                             format(time.ctime(),p_change, counter))
 
-            if random.random() < 0.10:
+            if random.random() < 0.30:
                 NOW = time.time()
-                if NOW - hbcounter >= 30:
+                if NOW - hbcounter >= random_wait:
                     client.cm_.heartbeat()
                     hbcounter = NOW
+                    random_wait = np.random.randint(4,40)
 
-                if p_change is not 0:                
-                    print('DAXY order price: ', order_price)
-                    random_size = np.random.randint(1,5) * 0.001
+                    if p_change is not 0 and order_price is not 0 \
+                            and sell_price is not 0:  
+                        print('+DAXY ORDER LOOP')
+                        random_size = np.random.randint(1,5) * 0.001
 
-                    client.buy(p_change,size=random_size, price=order_price,
-                                product_id="BTC-EUR",side="buy",type="limit") 
+                        client.ORDER(p_change,size=random_size, price=order_price,
+                                    product_id="BTC-EUR",side="buy",type="limit") 
 
-                    client.sell(price_target,p_change,size=random_size,price=order_price,
-                                product_id="BTC-EUR",side="buy",type="limit")
-                                
-                    counter = 0
+                        client.ORDER(p_change,size=random_size,price=sell_price,
+                                    product_id="BTC-EUR",side="sell",type="limit")
+                                    
+                        counter = 0
+                                                
+                    else:
+                        print('DAXY prices at zero')
