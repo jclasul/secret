@@ -28,7 +28,7 @@ class clearingmaster():
         self.marketBTCUSD = client.get_product_ticker("BTC-USD")
         self.marketBTCEUR = client.get_product_ticker("BTC-EUR")
         self.exchangerate = float(self.marketBTCEUR["price"]) / float(self.marketBTCUSD["price"])
-        print(self.exchangerate)
+        print('USD EUR at : ', self.exchangerate)
 
     def getorders(self):
         """{'id': 'e22c9172-0276-47f7-b774-2559784c26aa', 'price': '999.85000000', 
@@ -83,6 +83,7 @@ class clearingmaster():
             return True
 
     def heartbeat(self, **kwargs):
+        print('DAXY HB')
         has_orders = self.getorders()
         if has_orders is True:
             cutoffdate = pd.to_datetime(time.time()-self.heartbeat_rate, unit='s')
@@ -92,8 +93,6 @@ class clearingmaster():
                 db.delete_one({'MONGOKEY':'BUY_ORDER',
                                'trade_id': idtoterminate})
                 print('DAXY CANCELLED old order : {}'.format(response_cancel))
-
-        print('DAXY HB')
 
 class GAC(gdax.AuthenticatedClient):
     def __clearingmaster__(self):
@@ -137,7 +136,10 @@ class GAC(gdax.AuthenticatedClient):
 
             rjson = r.json()
             print(rjson)
-            rjson.update({'MONGOKEY':'BUY_ORDER','timestamp':time.time(),'trade_id':rjson['id']})
+            rjson.update({'MONGOKEY':'BUY_ORDER',
+                          'timestamp':time.time(),
+                          'trade_id':rjson['id'],
+                          'strategy':'ISS'})
             rjson.pop('id', None)
             db.insert_one(rjson)
             print('DAXY BOUGHT inserted in mongo\n{}'.format(rjson.get('price', None)))
@@ -153,17 +155,24 @@ class GAC(gdax.AuthenticatedClient):
                 type="limit")"""
 
         kwargs["side"] = "sell"
+        kwargs["type"] = "limit"
+        kwargs["price"] = np.round(kwargs['price'] * self.cm_.exchangerate, 2)
+
         r = requests.post(self.url + '/orders',
-                          data=json.dumps(kwargs),
-                          auth=self.auth,
-                          timeout=30)
+                        data=json.dumps(kwargs),
+                        auth=self.auth,
+                        timeout=30)
 
         rjson = r.json()
-        rjson.update({'MONGOKEY':'SELL_ORDER','timestamp':time.time(),'trade_id':rjson['id']})
+        print(rjson)
+        rjson.update({'MONGOKEY':'SELL_ORDER',
+                        'timestamp':time.time(),
+                        'trade_id':rjson['id'],
+                        'strategy':'ISS'})
         rjson.pop('id', None)
         db.insert_one(rjson)
-        print('DAXY SOLD inserted in mongo')
-        return r.json()
+        print('DAXY SOLD inserted in mongo\n{}'.format(rjson.get('price', None)))
+        return rjson
 
 if __name__ == "__main__":
     client = GAC(key=key,b64secret=b64secret,
@@ -171,35 +180,44 @@ if __name__ == "__main__":
                  api_url="https://api.pro.coinbase.com")
     
     client.__clearingmaster__() # set clearing master
-    p_change = {}
+    p_change = 0
     counter = 0
+    hbcounter = time.time()
 
     with db.watch() as stream:
         for change in stream:
-            if change.get('fullDocument', None) is not None: 
-                if change.get('fullDocument').get('MONGOKEY', None) == "FBP_UPDATE" and \
-                        change.get('fullDocument').get('product_id', None) == "BTC-USD":
+            if change.get('fullDocument', None) is not None:
+                if change.get('fullDocument').get('MONGOKEY', None) is not "BUY_ORDER":
+                    if change.get('fullDocument').get('MONGOKEY') == "FBP_UPDATE" and \
+                            change.get('fullDocument').get('product_id', None) == "BTC-USD":
 
-                    print('DAXY price at : {}'.format(p_change.get('fullDocument').get('y', None)))
-                    keys = ['_id',
-                            'yhat_lower_fcst_0002', 'yhat_lower_fcst_002',
-                            'yhat_upper_fcst_002', 'yhat_upper_fcst_0002']
-                    print(time.ctime(),[change.get('fullDocument').get(ckey,None) for ckey in keys]) 
-                    price_target = 'yhat_lower_fcst_002'
-                    order_price = change.get('fullDocument').get(price_target, 1) 
-                    print(order_price)
-                    client.buy(size=0.001, price=order_price,product_id="BTC-EUR",side="buy",type="limit")            
-                    counter = 0
+                        print('DAXY price at : {}'.format(p_change))
+                        keys = ['_id',
+                                'yhat_lower_fcst_0002', 'yhat_lower_fcst_002',
+                                'yhat_upper_fcst_002', 'yhat_upper_fcst_0002']
+                        print(time.ctime(),[change.get('fullDocument').get(ckey,None) for ckey in keys]) 
 
-                if change.get('fullDocument').get('MONGOKEY', None) == "MARKET_UPDATE" and \
-                        change.get('fullDocument').get('product_id', None) == "BTC-USD":
+                        price_target = 'yhat_lower_fcst_002'
+                        order_price = change.get('fullDocument').get(price_target, 1)
+                        if order_price >= p_change and p_change is not 0:
+                            print('DAXY lower 002 broken')
+                            order_price = p_change*0.999
+                        print('DAXY order price: ', order_price)
 
-                    counter += 1
-                    keys = ['_id','y']
-                    print('{0} +DAXY price at : {1} - {2}'.\
-                        format(time.ctime(),change.get('fullDocument').get('y',None), counter))
+                        client.buy(size=0.003, price=order_price,
+                                    product_id="BTC-EUR",side="buy",type="limit")            
+                        counter = 0
 
-                    p_change = change
+                    if change.get('fullDocument').get('MONGOKEY', None) == "MARKET_UPDATE" and \
+                            change.get('fullDocument').get('product_id', None) == "BTC-USD":
 
-                    if random.random() < 0.15:
-                        client.cm_.heartbeat()
+                        counter += 1
+                        p_change = float(change.get('fullDocument').get('y',0))
+                        print('{0} +DAXY price at : {1} - {2}'.\
+                            format(time.ctime(),p_change, counter))
+
+            if random.random() < 0.15:
+                NOW = time.time()
+                if NOW - hbcounter >= 30:
+                    client.cm_.heartbeat()
+                    hbcounter = NOW
