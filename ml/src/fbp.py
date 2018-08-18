@@ -15,9 +15,9 @@ client = pymongo.MongoClient(api.mongo)
 db = client.gdax.gdaxws
 
 class ML():
-    def FBP(self, db,time_delta=3600*24*2):  #default value is 5 days
+    def FBP(self, db,time_delta=3600*24):  #default value is 5 days
         random_ = random.random()
-        if random_ > 0.5:
+        if random_ < 0.65:
             self.product_id = 'BTC-USD'
         else:
             self.product_id = 'ETH-USD'
@@ -25,8 +25,8 @@ class ML():
         print('product_id {} : {}'.format(self.product_id, random_))
         df = pd.DataFrame(
             list(db.find({'MONGOKEY':'MARKET_UPDATE',
-                                'product_id':self.product_id,
-                                'timestamp' : {'$gt':time.time()-time_delta}})\
+                          'product_id':self.product_id,
+                          'timestamp' : {'$gt':time.time()-time_delta}})\
                             .sort([('timestamp', 1)]))) #sort from ascending
 
         df['time'] = pd.to_datetime(df['time'],infer_datetime_format=True)    
@@ -35,12 +35,12 @@ class ML():
         df['ds'] = df.index.copy(deep=True)
 
         m = Prophet(changepoint_prior_scale=0.0002).fit(df)
-        future = m.make_future_dataframe(periods=1, freq='1Min')
+        future = m.make_future_dataframe(periods=1, freq='30s')
         fcst_0002 = m.predict(future)
         fcst_0002 = fcst_0002.rename(columns=lambda x: x + "_fcst_0002")
 
         m = Prophet(changepoint_prior_scale=0.002).fit(df)
-        future = m.make_future_dataframe(periods=1, freq='1Min')
+        future = m.make_future_dataframe(periods=1, freq='30s')
         fcst_002 = m.predict(future)
         fcst_002 = fcst_002.rename(columns=lambda x: x + "_fcst_002")
 
@@ -65,12 +65,11 @@ class ML():
 if __name__ == "__main__":
     ML = ML()
     timer = time.time()
-    random_interval = random.randint(10,40)
+    random_interval = random.randint(1,10)
 
     FBP = ML.FBP
     push_mongo = ML.push_mongo
-
-    random_interval = 5 # quickstart    
+    
     print('*** FBP starting')
     while True:
         current_time = time.time()
@@ -79,9 +78,9 @@ if __name__ == "__main__":
                 y_hats = FBP(db)
                 push_mongo(db, y_hats, current_time)
                 timer = time.time()
-                random_interval = random.randint(10,40)
+                random_interval = random.randint(1,10)
             except:
-                time.sleep(4)
+                print('FBP main exception')
                 timer = time.time()
-                random_interval = random.randint(10,40)
+                random_interval = 3
                 
