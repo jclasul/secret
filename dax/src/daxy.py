@@ -42,7 +42,7 @@ class clearingmaster():
                                             'timestamp' : {'$lt':self.NOW-self.heartbeat_rate,
                                                            '$gt':self.NOW-600}})\
                                         .sort([('timestamp', 1)])))    # last 10 minutes 
-        print(self.last_10minutes)
+
         try:
             self.last_10minutes_size = self.last_10minutes['size'].astype('float').sum()
             print('DAXY L10 : {}'.format(self.last_10minutes_size))
@@ -75,40 +75,33 @@ class clearingmaster():
         #print('DAXY DEBUG', self.df_balances)
 
     def getclearance(self, kwargs_dict):
+        self.getbalances()
         print('=/DAXY CM {}'.format(kwargs_dict['side']))
-        funds_available = self.df_balances['BTC']['available'] 
-        print('=/DAXY CM {} available: {}'.format(kwargs_dict['side'], funds_available))
+        funds_available_btc = self.df_balances['BTC']['available'] 
+        print('=/DAXY CM {} funds BTC available: {:0.3f}'.format(kwargs_dict['side'], funds_available_btc))
+        self.order_size = np.maximum(funds_available_btc * np.random.random() * 0.3, 0.001)
 
         try:
-            orderprice = kwargs_dict['price'] * kwargs_dict['size']
-            print('=/DAXY CM {} received: {}'.format(kwargs_dict['side'], orderprice))
+            orderprice = kwargs_dict['price'] * self.order_size
+            print('=/DAXY CM {} received: {:0.2f}'.format(kwargs_dict['side'], orderprice))
         except KeyError:
             print('=/DAXY CM {} KeyError'.format(kwargs_dict['side']))
             return False
 
-        if kwargs_dict['side'].upper() == 'BUY':
-            if self.df_balances['EUR']['available'] <= orderprice:
-                return False
-            else:
-                self.random_size = np.maximum(funds_available * np.random.random()*0.5, 0.001)
-                return True
+        if kwargs_dict['side'] == 'buy' and self.df_balances['EUR']['available'] > orderprice:
+            return True
 
-        elif kwargs_dict['side'].upper() == 'SELL':
-            if funds_available > 0:
-                self.random_size = np.maximum(np.round(funds_available * np.random.random() * 0.5 ,3), 0.001)
-                return True
-            else:
-                return False
-
-        else:
-            return False
+        if kwargs_dict['side'] == 'sell' and funds_available_btc > 0.001:
+            return True
+        
+        return False
 
     def heartbeat(self, **kwargs):
         self.NOW = kwargs.get('NOW', time.time())
         print('+DAXY HB {}'.format(self.NOW))        
         has_orders = self.getorders()
         if has_orders is True:
-            cutoffdate = pd.to_datetime(time.time()-self.heartbeat_rate, unit='s')
+            cutoffdate = pd.to_datetime(self.NOW-self.heartbeat_rate, unit='s')
             to_terminate = self.df_openorders[self.df_openorders["created_at"]<cutoffdate]['id']
             for idtoterminate in to_terminate:
                 response_cancel = client.cancel_order(idtoterminate) 
@@ -121,7 +114,7 @@ class GAC(gdax.AuthenticatedClient):
         self.cm_ = clearingmaster()
         self.timeout = 15
 
-    def ORDER(self, p_change, **kwargs):
+    def ORDER(self, lastknowprice, **kwargs):
         """client.buy(size="0.005000000",
                 product_id="BTC-EUR",
                 side="buy",
@@ -148,28 +141,19 @@ class GAC(gdax.AuthenticatedClient):
         print('+DAXY ORDER : {}'.format(kwargs.get("side", None)))
         kwargs["type"] = "limit"
         kwargs["product_id"] = "BTC-EUR"
-        self.cm_.getbalances()
+         
+        if kwargs["side"] == "sell" and kwargs["price"] <= lastknowprice:
+            print('=DAXY upper 0002 broken')
+            order_price = lastknowprice*1.006
+        elif kwargs["side"] == "buy" and kwargs["price"] >= lastknowprice:
+            print('=DAXY lower 002 broken')
+            order_price = lastknowprice*0.996     
+        kwargs["price"] = np.round(kwargs['price'] * self.cm_.exchangerate, 2)
 
-        if kwargs["side"] == "sell":
-            if kwargs["price"] <= p_change:
-                print('=DAXY upper 0002 broken')
-                order_price = p_change*1.006
-            kwargs["price"] = np.round(kwargs['price'] * self.cm_.exchangerate, 2)
-
-            trade_request = self.cm_.getclearance(SIDE='SC', kwargs_dict=kwargs)
-            kwargs["size"] = self.cm_.random_size
-
-        elif kwargs["side"] == "buy":
-            if kwargs["price"] >= p_change:
-                print('=DAXY lower 002 broken')
-                order_price = p_change*0.996
-            kwargs["price"] = np.round(kwargs['price'] * self.cm_.exchangerate, 2)
-            
-            
-        trade_request = self.cm_.getclearance(SIDE, kwargs_dict=kwargs)
-            
-        kwargs["size"] = self.cm_.random_size
+        trade_request = self.cm_.getclearance(kwargs_dict=kwargs)                
+        kwargs["size"] = np.round(self.cm_.order_size, 3)
         
+        print('=? DAXY TR: {}'.format(trade_request))
         if trade_request == True:
             r = requests.post(self.url + '/orders',
                             data=json.dumps(kwargs),
@@ -198,9 +182,10 @@ if __name__ == "__main__":
                  api_url="https://api.pro.coinbase.com")
     
     client.__clearingmaster__() # set clearing master
-    p_change = 0
+    lastknowprice = 0
     counter = 0
     order_price = 0
+    NOW = 0
     hbcounter = time.time()
     random_wait = np.random.randint(4,40)
     price_target_lower = 'yhat_lower_fcst_002'
@@ -216,7 +201,7 @@ if __name__ == "__main__":
                         keys = ['_id',
                                 'yhat_lower_fcst_0002', 'yhat_lower_fcst_002',
                                 'yhat_upper_fcst_002', 'yhat_upper_fcst_0002']
-                        print(time.ctime(),[change.get('fullDocument').get(ckey,None) for ckey in keys]) 
+                        print(NOW, [change.get('fullDocument').get(ckey,None) for ckey in keys]) 
 
                         order_price = change.get('fullDocument').get(price_target_lower, 1)
                         sell_price = change.get('fullDocument').get(price_target_upper, 1)
@@ -227,9 +212,9 @@ if __name__ == "__main__":
                             change.get('fullDocument').get('product_id', None) == "BTC-USD":
 
                         counter += 1
-                        p_change = float(change.get('fullDocument').get('y',0))
+                        lastknowprice = float(change.get('fullDocument').get('y',0))
                         print('{0} +DAXY price at : {1} - {2}'.\
-                            format(time.ctime(),p_change, counter))
+                            format(NOW, lastknowprice, counter))
 
             if random.random() < 0.30:
                 NOW = time.time()
@@ -238,17 +223,17 @@ if __name__ == "__main__":
                     hbcounter = NOW
                     random_wait = np.random.randint(4,40)
 
-                    if p_change is not 0 and order_price is not 0 \
+                    if lastknowprice is not 0 and order_price is not 0 \
                             and sell_price is not 0 and counter < 10:  
                         print('+DAXY ORDER LOOP')
                         random_order = np.random.random()
 
                         if random_order > 0.5:
-                            client.ORDER(p_change,size=random_size, price=order_price,
-                                        product_id="BTC-EUR",side="buy",type="limit") 
+                            client.ORDER(lastknowprice, size=0, price=order_price,
+                                        product_id="BTC-EUR", side="buy", type="limit") 
                         else:
-                            client.ORDER(p_change,size=random_size,price=sell_price,
-                                        product_id="BTC-EUR",side="sell",type="limit")
+                            client.ORDER(lastknowprice, size=0, price=sell_price,
+                                        product_id="BTC-EUR", side="sell", type="limit")
                                         
                         counter += 1
                                                 
