@@ -50,7 +50,7 @@ class clearingmaster():
         
     def getbalances(self):
         """{'id': '459d001f-0391-4e97-89e7-ae474275e2c9', 'currency': 'BTC',
-            'balance': '0.0530287336346057', 'available': '0.0530287336346057',
+            'balance': '0.0530287336346057', 'avai`lable': '0.0530287336346057',
             'hold': '0.0000000000000000', 'profile_id': '5100622b-3ed2-49e4-9810-c28fb96d30b3'} """
 
         balances = client.get_accounts()
@@ -77,6 +77,17 @@ class clearingmaster():
         else:
             return True
 
+    def heartbeat_sell(self, kwargs_dict):
+        print('DAXY HBs')
+        self.getbalances()
+        BTC_available = self.df_balances['BTC']['available'] # balance, holds and available
+
+        if BTC_available > 0:
+            random_size = np.round(BTC_available * np.random.random(),2)
+            return random_size
+        else:
+            return False
+
     def heartbeat(self, **kwargs):
         print('DAXY HB')
         has_orders = self.getorders()
@@ -85,8 +96,7 @@ class clearingmaster():
             to_terminate = self.df_openorders[self.df_openorders["created_at"]<cutoffdate]['id']
             for idtoterminate in to_terminate:
                 response_cancel = client.cancel_order(idtoterminate) 
-                db.delete_one({'MONGOKEY':'BUY_ORDER',
-                               'trade_id': idtoterminate})
+                db.delete_one({'MONGOKEY':'BUY_ORDER','trade_id': idtoterminate})
                 print('DAXY CANCELLED old order : {}'.format(response_cancel))
 
 class GAC(gdax.AuthenticatedClient):
@@ -94,7 +104,7 @@ class GAC(gdax.AuthenticatedClient):
         self.cm_ = clearingmaster()
         self.timeout = 15
 
-    def buy(self, **kwargs):
+    def buy(self, p_change, **kwargs):
         """client.buy(size="0.005000000",
                 product_id="BTC-EUR",
                 side="buy",
@@ -120,7 +130,12 @@ class GAC(gdax.AuthenticatedClient):
 
         kwargs["side"] = "buy"
         kwargs["type"] = "limit"
+
+        if kwargs["price"] >= p_change:
+            print('DAXY lower 002 broken')
+            order_price = p_change*0.999
         kwargs["price"] = np.round(kwargs['price'] * self.cm_.exchangerate, 2)
+
         trade_request = self.cm_.getclearance(kwargs_dict=kwargs)
         
         if trade_request == True:
@@ -142,7 +157,7 @@ class GAC(gdax.AuthenticatedClient):
         else:
             print('DAXY CM no permission')
 
-    def sell(self, **kwargs):
+    def sell(self, p_change, **kwargs):
         """client.sell(size="0.005000000",
                 product_id="BTC-EUR",
                 side="sell",
@@ -151,6 +166,10 @@ class GAC(gdax.AuthenticatedClient):
 
         kwargs["side"] = "sell"
         kwargs["type"] = "limit"
+
+        if kwargs["price"] <= p_change:
+            print('DAXY lower 002 broken')
+            order_price = p_change*1.006
         kwargs["price"] = np.round(kwargs['price'] * self.cm_.exchangerate, 2)
 
         r = requests.post(self.url + '/orders',
@@ -160,7 +179,7 @@ class GAC(gdax.AuthenticatedClient):
 
         rjson = r.json()
         print(rjson)
-        rjson.update({'MONGOKEY':'SELL_ORDER',
+        rjson.update({'MONGOKEY':'BUY_ORDERS',
                         'timestamp':time.time(),
                         'trade_id':rjson['id'],
                         'strategy':'ISS'})
@@ -210,15 +229,14 @@ if __name__ == "__main__":
                     client.cm_.heartbeat()
                     hbcounter = NOW
 
-                if p_change is not 0:
-                    if order_price >= p_change:
-                        print('DAXY lower 002 broken')
-                        order_price = p_change*0.999
-                
+                if p_change is not 0:                
                     print('DAXY order price: ', order_price)
                     random_size = np.random.randint(1,5) * 0.001
 
-                    client.buy(size=random_size, price=order_price,
+                    client.buy(p_change,size=random_size, price=order_price,
                                 product_id="BTC-EUR",side="buy",type="limit") 
+
+                    client.sell(price_target,p_change,size=random_size,price=order_price,
+                                product_id="BTC-EUR",side="buy",type="limit")
                                 
                     counter = 0
