@@ -15,13 +15,14 @@ client = pymongo.MongoClient(api.mongo)
 db = client.gdax.gdaxws
 
 class ML():
-    def FBP(db,time_delta=3600*24*2):  #default value is 5 days
+    def FBP(self, db,time_delta=3600*24*2):  #default value is 5 days
         random_ = random.random()
         if random_ > 0.5:
             self.product_id = 'BTC-USD'
         else:
             self.product_id = 'ETH-USD'
 
+        print('product_id {} : {}'.format(self.product_id, random_))
         df = pd.DataFrame(
             list(db.find({'MONGOKEY':'MARKET_UPDATE',
                                 'product_id':self.product_id,
@@ -49,10 +50,10 @@ class ML():
         y_hats_002 = fcst_002.iloc[-1][[col + "_fcst_002" for col in keep_columns]].to_dict()
         return {**y_hats_0002,**y_hats_002}
 
-    def push_mongo(db, y_hats, current_time):
+    def push_mongo(self, db, y_hats, current_time):
         y_hats.update({'MONGOKEY':'FBP_UPDATE',
                         'timestamp':current_time,
-                        '_id':y_hats['ds_fcst_0002'],
+                        '_id':','.join([str(y_hats['ds_fcst_0002']),self.product_id]),
                         'product_id':self.product_id})
         
         try:
@@ -62,12 +63,15 @@ class ML():
             print(time.ctime(),'catching exception parsing mongo')
 
 if __name__ == "__main__":
+    ML = ML()
     timer = time.time()
     random_interval = random.randint(10,40)
 
-    FBP = ML().FBP
-    push_mongo = ML().push_mongo
- 
+    FBP = ML.FBP
+    push_mongo = ML.push_mongo
+
+    random_interval = 5 # quickstart    
+    print('*** FBP starting')
     while True:
         current_time = time.time()
         if current_time - timer > random_interval:
