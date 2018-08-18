@@ -22,8 +22,7 @@ b64secret = api.secret_key
 passphrase = api.passphrase
 
 class clearingmaster():
-    def __init__(self, maxopenbuyorders = 20 ,**kwargs):
-        self.maxopenbuyorders = maxopenbuyorders
+    def __init__(self, **kwargs):
         self.heartbeat_rate = 100  # seconds before we auto cancel limit order
         self.marketBTCUSD = client.get_product_ticker("BTC-USD")
         self.marketBTCEUR = client.get_product_ticker("BTC-EUR")
@@ -67,7 +66,6 @@ class clearingmaster():
             orderprice = kwargs_dict['price'] * kwargs_dict['size']
             print('DAXY CM order received total price: {}'.format(orderprice))
             self.getbalances()
-            self.getorders()
         except KeyError:
             print('DAXY CM KeyError calculating orderprice')
             print('DAXY CM KeyError rejecting order request')
@@ -75,9 +73,6 @@ class clearingmaster():
 
         if self.df_balances['EUR']['available'] <= orderprice:
             print('DAXY CM insufficient funds')
-            return False
-        elif len(self.df_openorders) >= self.maxopenbuyorders:
-            print('DAXY CM maximum limit orders reached')
             return False
         else:
             return True
@@ -182,6 +177,7 @@ if __name__ == "__main__":
     client.__clearingmaster__() # set clearing master
     p_change = 0
     counter = 0
+    order_price = 0
     hbcounter = time.time()
 
     with db.watch() as stream:
@@ -199,14 +195,6 @@ if __name__ == "__main__":
 
                         price_target = 'yhat_lower_fcst_002'
                         order_price = change.get('fullDocument').get(price_target, 1)
-                        if order_price >= p_change and p_change is not 0:
-                            print('DAXY lower 002 broken')
-                            order_price = p_change*0.999
-                        print('DAXY order price: ', order_price)
-
-                        client.buy(size=0.003, price=order_price,
-                                    product_id="BTC-EUR",side="buy",type="limit")            
-                        counter = 0
 
                     if change.get('fullDocument').get('MONGOKEY', None) == "MARKET_UPDATE" and \
                             change.get('fullDocument').get('product_id', None) == "BTC-USD":
@@ -216,8 +204,21 @@ if __name__ == "__main__":
                         print('{0} +DAXY price at : {1} - {2}'.\
                             format(time.ctime(),p_change, counter))
 
-            if random.random() < 0.15:
+            if random.random() < 0.10:
                 NOW = time.time()
                 if NOW - hbcounter >= 30:
                     client.cm_.heartbeat()
                     hbcounter = NOW
+
+                if p_change is not 0:
+                    if order_price >= p_change:
+                        print('DAXY lower 002 broken')
+                        order_price = p_change*0.999
+                
+                    print('DAXY order price: ', order_price)
+                    random_size = np.random.randint(1,5) * 0.001
+
+                    client.buy(size=random_size, price=order_price,
+                                product_id="BTC-EUR",side="buy",type="limit") 
+                                
+                    counter = 0
