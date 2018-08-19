@@ -8,6 +8,7 @@ import random as random
 import json
 import pandas as pd
 import numpy as np
+from threading import Thread
 
 api = api_keys.api_keys()
 
@@ -228,10 +229,17 @@ class mongowatcher():
         self.lastknowprice = 0
         self.counter = 0    
         self.hbcounter = time.time()
-        self.random_wait = 10
+        self.random_wait = 1
         self.fbp_update = False
 
+    def caller_wrapper(self, threadID):
+        while True:
+            self.caller(threadID)
+            print('caller wrapper')
+            time.sleep(1)
+
     def caller(self):
+        threadID = 1
         NOW = time.time()
         if NOW - self.hbcounter >= self.random_wait:
             self.op_.cm_.heartbeat(NOW=NOW)
@@ -239,8 +247,8 @@ class mongowatcher():
             self.random_wait = np.random.randint(4,40)
 
         if self.lastknowprice is not 0 and self.fbp_update is True \
-                and self.counter < 30 and random.random() < 0.55:
-            print('+DAXY ORDER LOOP')
+                and self.counter < 30 and random.random() < 0.10:
+            print('+DAXY ORDER LOOP t:{}'.format(threadID))
             random_order = np.random.random()
 
             if random_order > 0.5:
@@ -258,9 +266,10 @@ class mongowatcher():
             self.counter += 1
 
         else:
-            print('DAXY prices at zero')
+            pass
 
     def watcher(self):
+        threadID = 2
         with db.watch() as stream:
             for change in stream:
                 if change.get('fullDocument', None) is not None:
@@ -276,15 +285,15 @@ class mongowatcher():
 
                             self.counter += 1
                             self.lastknowprice = float(change.get('fullDocument').get('y',0))
-                            print('+DAXY price at : {:0.2f} - {}'.\
-                                format(self.lastknowprice, self.counter))
-
-                if random.random() < 0.4:
-                    self.caller()
-                
+                            print('+DAXY price at : {:0.2f} - {} t: {}'.\
+                                format(self.lastknowprice, self.counter, threadID))
 
 if __name__ == "__main__":
-    print('DAXY starting')
     mw_ = mongowatcher()
-    print(mw_.op_.cm_.exchangerate)
-    mw_.watcher()
+    print(mw_.op_.cm_.exchangerate)    
+
+    T1 = Thread(target = mw_.watcher)
+    T2 = Thread(target = mw_.caller_wrapper)
+
+    T2.start()
+    T1.start()
