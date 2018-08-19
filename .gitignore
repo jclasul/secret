@@ -7,3 +7,5 @@ flask/
 */glenn/*
 .ipynb_checkpoints
 dockupdate.py
+.ipynb
+*.ipynb
