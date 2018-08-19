@@ -232,33 +232,33 @@ class mongowatcher():
         self.fbp_update = False
 
     def caller(self):
-        if random.random() < 0.2:
-            NOW = time.time()
-            if NOW - self.hbcounter >= self.random_wait:
-                self.op_.cm_.heartbeat(NOW=NOW)
-                self.hbcounter = NOW
-                self.random_wait = np.random.randint(4,40)
+        NOW = time.time()
+        if NOW - self.hbcounter >= self.random_wait:
+            self.op_.cm_.heartbeat(NOW=NOW)
+            self.hbcounter = NOW
+            self.random_wait = np.random.randint(4,40)
 
-            if self.lastknowprice is not 0 and self.fbp_update is True and self.counter < 30:
-                print('+DAXY ORDER LOOP')
-                random_order = np.random.random()
+        if self.lastknowprice is not 0 and self.fbp_update is True \
+                and self.counter < 30 and random.random() < 0.55:
+            print('+DAXY ORDER LOOP')
+            random_order = np.random.random()
 
-                if random_order > 0.5:
-                    random_side = 'buy'
-                else:
-                    random_side = 'sell'
-                                
-                flag, TK = self.op_.makeorder(lastknowprice=self.lastknowprice,side=random_side)
-
-                if flag is True:
-                    self.client.ORDER(price=TK['price'], side=TK['side'], size=TK['size']) 
-                else:
-                    print("DAXY NA")
-
-                self.counter += 1
-
+            if random_order > 0.5:
+                random_side = 'buy'
             else:
-                print('DAXY prices at zero')
+                random_side = 'sell'
+                            
+            flag, TK = self.op_.makeorder(lastknowprice=self.lastknowprice,side=random_side)
+
+            if flag is True:
+                self.client.ORDER(price=TK['price'], side=TK['side'], size=TK['size']) 
+            else:
+                print("DAXY NA")
+
+            self.counter += 1
+
+        else:
+            print('DAXY prices at zero')
 
     def watcher(self):
         with db.watch() as stream:
@@ -279,8 +279,8 @@ class mongowatcher():
                             print('+DAXY price at : {:0.2f} - {}'.\
                                 format(self.lastknowprice, self.counter))
 
-                        self.caller()
-
+                if random.random() < 0.4:
+                    self.caller()
                 
 
 if __name__ == "__main__":
