@@ -71,7 +71,7 @@ class clearingmaster():
         balance_longshort = balance_long + balance_short
         self.ratio_long = balance_long / balance_longshort
         self.ratio_long_oke = self.ratio_long < self.longthreshold
-        print('=/DAXY CM GB {} = {}'.format(self.ratio_long, self.ratio_long_oke))
+        print('=/DAXY CM GB {:0.2f} = {}'.format(self.ratio_long, self.ratio_long_oke))
         #print('DAXY DEBUG', self.df_balances)
 
     def getclearance(self, kwargs_dict, price_trend_0002, price_trend_002):
@@ -108,7 +108,7 @@ class clearingmaster():
                     else:
                         NA = 'ratio long not oke {:0.2f}'.format(self.ratio_long)
                 else:
-                    NA = 'below trend {:0.0f}'.format(price_trend_0002)
+                    NA = 'below trend {:0.0f} EUR'.format(price_trend_0002)
             else:
                 NA = 'unsufficient funds: {:0.0f} EUR'.format(funds_available_eur)
 
@@ -117,7 +117,7 @@ class clearingmaster():
                 if self.requestedprice > price_trend_0002:
                     return True
                 else:
-                    NA = 'below trend {:0.0f}'.format(price_trend_0002)
+                    NA = 'below trend {:0.0f} EUR'.format(price_trend_0002)
             else:
                 NA = 'unsufficient funds: {:0.0f} BTC'.format(funds_available_btc)
         
@@ -149,7 +149,7 @@ class orderpicker():
         self.trend_fcst_0002 = fbp_change.get('trend_fcst_0002', 0) 
         self.trend_fcst_002 = fbp_change.get('trend_fcst_002', 0) 
 
-        print('DAXY FBP update   L3:{:0.0f}|L2:{:0.0f}\tT3:{:0.0f}|T2:{:0.0f}\tU2:{:0.0f}|U3:{:0.0f}'\
+        print('DAXY FBP update [USD] L3:{:0.0f}|L2:[{:0.0f}]\tT3:{:0.0f}|T2:{:0.0f}\tU2:[{:0.0f}]|U3:{:0.0f}'\
                 .format(self.yhat_lower_fcst_0002,self.yhat_lower_fcst_002,self.trend_fcst_0002,
                         self.trend_fcst_002,self.yhat_upper_fcst_002,self.yhat_upper_fcst_0002))
 
@@ -314,7 +314,7 @@ class mongowatcher():
 
                             self.counter += 1
                             self.lastknowprice = float(change.get('fullDocument').get('y',0))
-                            print('{}+DAXY price at : {:0.0f}'.\
+                            print('{}+DAXY price at : {:0.0f} USD'.\
                                 format(self.counter, self.lastknowprice))
 
 if __name__ == "__main__":
