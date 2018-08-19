@@ -44,19 +44,6 @@ class clearingmaster():
             'filled_size': '0.00000000', 'executed_value': '0.0000000000000000', 
             'status': 'open', 'settled': False}"""
 
-        self.last_10minutes = pd.DataFrame(list(db.find({'MONGOKEY':'BUY_ORDER',
-                                            'product_id':'BTC-EUR','side':'buy',
-                                            'timestamp' : {'$lt':self.NOW-self.heartbeat_rate,
-                                                           '$gt':self.NOW-600}})\
-                                        .sort([('timestamp', 1)])))    # last 10 minutes 
-
-        try:
-            self.last_10minutes_size = self.last_10minutes['size'].astype('float').sum()
-            print('DAXY L10 : {}'.format(self.last_10minutes_size))
-        except KeyError:
-            print('DAXY L10 no data')
-            self.last_10minutes_size = 0
-
         openorders = self.client.get_orders()[0]
         try:
             df_openorders = pd.DataFrame(openorders).query('product_id == "BTC-EUR"')
@@ -80,7 +67,7 @@ class clearingmaster():
         l = ['available','balance','hold']        
         self.df_balances = df_balances.loc[l].astype('float')
         balance_long = self.df_balances.loc['balance']['EUR']
-        balance_short = self.df_balances.loc['balance']['BTC'] * self.lastknowprice
+        balance_short = self.df_balances.loc['balance']['BTC'] * self.requestedprice
         balance_longshort = balance_long + balance_short
         self.ratio_long = balance_long / balance_longshort
         self.ratio_long_oke = self.ratio_long < self.longthreshold
@@ -88,38 +75,53 @@ class clearingmaster():
         #print('DAXY DEBUG', self.df_balances)
 
     def getclearance(self, kwargs_dict, price_trend_0002, price_trend_002):
-        self.lastknowprice = kwargs_dict.get("price", 0)
+        self.requestedprice = kwargs_dict.get("price", 0)
         self.getbalances()
         price_trend_0002 = price_trend_0002 * self.exchangerate
         price_trend_002 = price_trend_002 * self.exchangerate
         print('=/DAXY CM GC {}'.format(kwargs_dict['side']))
         funds_available_btc = self.df_balances['BTC']['available'] 
         funds_available_eur = self.df_balances['EUR']['available'] 
-        print('=/DAXY CM GC {} BTC: {:0.3f} EUR: {:0.2f}'\
+        print('=/DAXY CM GC {} BTC: {:0.3f} EUR: {:0.0f}'\
             .format(kwargs_dict['side'], funds_available_btc, funds_available_eur))
         self.order_size = np.maximum(funds_available_btc * np.random.random() * 0.2, 0.001)
 
         try:
-            orderprice = self.lastknowprice * self.order_size
-            print('=/DAXY CM GC {} received: {:0.2f}EUR {:0.2f}USD'\
-                .format(kwargs_dict['side'], self.lastknowprice, self.lastknowprice / self.exchangerate))
+            orderprice = self.requestedprice * self.order_size
+            print('=/DAXY CM GC {} received: {:0.0f} EUR {:0.0f} USD'\
+                .format(kwargs_dict['side'], self.requestedprice, self.requestedprice / self.exchangerate))
         except KeyError:
             print('=/DAXY CM GC {} KeyError'.format(kwargs_dict["side"]))
             return False
 
-        if self.lastknowprice < self.marketBTCEUR * 0.8:
+        if self.requestedprice < self.marketBTCEUR * 0.8:
             return False
 
-        if kwargs_dict['side'] == 'buy' and self.df_balances['EUR']['available'] > orderprice + 0.5 \
-                and self.lastknowprice < price_trend_0002 and self.ratio_long_oke is True:
-            self.order_size = np.maximum(funds_available_eur / self.lastknowprice * np.random.random() * 0.125, 0.001)
-            return True
+        if kwargs_dict['side'] == 'buy':
+            if self.df_balances['EUR']['available'] > orderprice + 0.5:
+                if self.requestedprice < price_trend_0002:
+                    if self.ratio_long_oke is True:                        
+                        self.order_size = np.maximum(
+                            funds_available_eur / self.requestedprice * np.random.random() * 0.125, 0.001)
+                        return True
+                        
+                    else:
+                        NA = 'ratio long not oke {:0.2f}'.format(self.ratio_long)
+                else:
+                    NA = 'below trend {:0.0f}'.format(price_trend_0002)
+            else:
+                NA = 'unsufficient funds: {:0.0f} EUR'.format(funds_available_eur)
 
-        if kwargs_dict['side'] == 'sell' and funds_available_btc > 0.001 \
-                and self.lastknowprice > price_trend_0002:
-            return True
+        if kwargs_dict['side'] == 'sell':
+            if funds_available_btc > 0.001:
+                if self.requestedprice > price_trend_0002:
+                    return True
+                else:
+                    NA = 'below trend {:0.0f}'.format(price_trend_0002)
+            else:
+                NA = 'unsufficient funds: {:0.0f} BTC'.format(funds_available_btc)
         
-        print('=/DAXY CM GC {} NA'.format(kwargs_dict["side"]))
+        print('=/DAXY CM GC {} NA = {}'.format(kwargs_dict["side"], NA))
         return False
 
     def heartbeat(self, **kwargs):
@@ -147,7 +149,7 @@ class orderpicker():
         self.trend_fcst_0002 = fbp_change.get('trend_fcst_0002', 0) 
         self.trend_fcst_002 = fbp_change.get('trend_fcst_002', 0) 
 
-        print('DAXY FBP update :\nL3:{:0.2f}|L2:{:0.2f}\tT3:{:0.2f}|T2:{:0.2f}\tU2:{:0.2f}|U3:{:0.2f}'\
+        print('DAXY FBP update   L3:{:0.0f}|L2:{:0.0f}\tT3:{:0.0f}|T2:{:0.0f}\tU2:{:0.0f}|U3:{:0.0f}'\
                 .format(self.yhat_lower_fcst_0002,self.yhat_lower_fcst_002,self.trend_fcst_0002,
                         self.trend_fcst_002,self.yhat_upper_fcst_002,self.yhat_upper_fcst_0002))
 
@@ -253,9 +255,15 @@ class mongowatcher():
         self.fbp_update = False
 
     def caller_wrapper(self):
+        exchange_update_counter = 0
         while True:
             self.caller()
             time.sleep(1)
+
+            exchange_update_counter += 1
+            if exchange_update_counter > 600:
+                self.op_.cm_.getexchangerate()
+                exchange_update_counter = 0
 
     def caller(self):
         NOW = time.time()
@@ -280,7 +288,7 @@ class mongowatcher():
                 if flag is True:
                     self.client.ORDER(price=TK['price'], side=TK['side'], size=TK['size']) 
                 else:
-                    print("DAXY NA")
+                    pass
 
                 self.counter += 1
                 self.ordertimer = NOW
@@ -306,8 +314,8 @@ class mongowatcher():
 
                             self.counter += 1
                             self.lastknowprice = float(change.get('fullDocument').get('y',0))
-                            print('+DAXY price at : {:0.2f} - {}'.\
-                                format(self.lastknowprice, self.counter))
+                            print('{}+DAXY price at : {:0.0f}'.\
+                                format(self.counter, self.lastknowprice))
 
 if __name__ == "__main__":
     mw_ = mongowatcher()
