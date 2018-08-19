@@ -76,6 +76,8 @@ class clearingmaster():
 
     def getclearance(self, kwargs_dict, price_trend_0002, price_trend_002):
         self.getbalances()
+        price_trend_0002 = price_trend_0002 * self.exchangerate
+        price_trend_002 = price_trend_002 * self.exchangerate
         print('=/DAXY CM {}'.format(kwargs_dict['side']))
         funds_available_btc = self.df_balances['BTC']['available'] 
         funds_available_eur = self.df_balances['EUR']['available'] 
@@ -92,14 +94,15 @@ class clearingmaster():
             return False
 
         if kwargs_dict['side'] == 'buy' and self.df_balances['EUR']['available'] > orderprice + 0.5 \
-                and kwargs_dict["price"] <= price_trend_0002:
+                and kwargs_dict["price"] < price_trend_0002:
             self.order_size = np.maximum(funds_available_eur / kwargs_dict["price"] * np.random.random() * 0.125, 0.001)
             return True
 
         if kwargs_dict['side'] == 'sell' and funds_available_btc > 0.001 \
-                and kwargs_dict["price"] >= price_trend_0002:
+                and kwargs_dict["price"] > price_trend_0002:
             return True
         
+        print(kwargs_dict["price"], price_trend_0002)
         return False
 
     def heartbeat(self, **kwargs):
@@ -246,7 +249,7 @@ class mongowatcher():
         if self.lastknowprice is not 0 and self.fbp_update is True \
                 and self.counter < 30 and NOW - self.ordertimer > 5:
 
-            if random.random() > 0.75:
+            if random.random() > 0.60:
                 print('+DAXY ORDER LOOP')
                 random_order = np.random.random()
 
