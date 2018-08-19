@@ -229,47 +229,48 @@ class mongowatcher():
         self.lastknowprice = 0
         self.counter = 0    
         self.hbcounter = time.time()
-        self.random_wait = 1
+        self.ordertimer = self.hbcounter
         self.fbp_update = False
 
-    def caller_wrapper(self, threadID):
+    def caller_wrapper(self):
         while True:
-            self.caller(threadID)
-            print('caller wrapper')
+            self.caller()
             time.sleep(1)
 
     def caller(self):
-        threadID = 1
         NOW = time.time()
-        if NOW - self.hbcounter >= self.random_wait:
+        if NOW - self.hbcounter >= 30:
             self.op_.cm_.heartbeat(NOW=NOW)
             self.hbcounter = NOW
-            self.random_wait = np.random.randint(4,40)
 
         if self.lastknowprice is not 0 and self.fbp_update is True \
-                and self.counter < 30 and random.random() < 0.10:
-            print('+DAXY ORDER LOOP t:{}'.format(threadID))
-            random_order = np.random.random()
+                and self.counter < 30 and NOW - self.ordertimer > 5:
 
-            if random_order > 0.5:
-                random_side = 'buy'
+            if random.random() > 0.75:
+                print('+DAXY ORDER LOOP')
+                random_order = np.random.random()
+
+                if random_order > 0.5:
+                    random_side = 'buy'
+                else:
+                    random_side = 'sell'
+                                
+                flag, TK = self.op_.makeorder(lastknowprice=self.lastknowprice,side=random_side)
+
+                if flag is True:
+                    self.client.ORDER(price=TK['price'], side=TK['side'], size=TK['size']) 
+                else:
+                    print("DAXY NA")
+
+                self.counter += 1
+                self.ordertimer = NOW
             else:
-                random_side = 'sell'
-                            
-            flag, TK = self.op_.makeorder(lastknowprice=self.lastknowprice,side=random_side)
-
-            if flag is True:
-                self.client.ORDER(price=TK['price'], side=TK['side'], size=TK['size']) 
-            else:
-                print("DAXY NA")
-
-            self.counter += 1
+                self.ordertimer = NOW
 
         else:
             pass
 
     def watcher(self):
-        threadID = 2
         with db.watch() as stream:
             for change in stream:
                 if change.get('fullDocument', None) is not None:
@@ -285,8 +286,8 @@ class mongowatcher():
 
                             self.counter += 1
                             self.lastknowprice = float(change.get('fullDocument').get('y',0))
-                            print('+DAXY price at : {:0.2f} - {} t: {}'.\
-                                format(self.lastknowprice, self.counter, threadID))
+                            print('+DAXY price at : {:0.2f} - {}'.\
+                                format(self.lastknowprice, self.counter))
 
 if __name__ == "__main__":
     mw_ = mongowatcher()
