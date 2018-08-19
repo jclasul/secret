@@ -74,17 +74,19 @@ class clearingmaster():
         print('=/DAXY CM GB {:0.2f} = {}'.format(self.ratio_long, self.ratio_long_oke))
         #print('DAXY DEBUG', self.df_balances)
 
-    def getclearance(self, kwargs_dict, price_trend_0002, price_trend_002):
-        self.requestedprice = kwargs_dict.get("price", 0)
-        self.getbalances()
-        price_trend_0002 = price_trend_0002 * self.exchangerate
-        price_trend_002 = price_trend_002 * self.exchangerate
-        print('=/DAXY CM GC {}'.format(kwargs_dict['side']))
+    def getclearance_balances(self, kwargs_dict):
+        self.getbalances()                
         funds_available_btc = self.df_balances['BTC']['available'] 
         funds_available_eur = self.df_balances['EUR']['available'] 
         print('=/DAXY CM GC {} BTC: {:0.3f} EUR: {:0.0f}'\
             .format(kwargs_dict['side'], funds_available_btc, funds_available_eur))
-        self.order_size = np.maximum(funds_available_btc * np.random.random() * 0.2, 0.001)
+
+        if kwargs_dict["side"] == "buy":
+            self.order_size = np.maximum(funds_available_btc * np.random.random() * 0.2, 0.001)
+
+        elif kwargs_dict["side"] == "sell":
+            self.order_size = np.maximum(
+                                funds_available_eur / self.requestedprice * np.random.random() * 0.125, 0.001)
 
         try:
             orderprice = self.requestedprice * self.order_size
@@ -92,34 +94,46 @@ class clearingmaster():
                 .format(kwargs_dict['side'], self.requestedprice, self.requestedprice / self.exchangerate))
         except KeyError:
             print('=/DAXY CM GC {} KeyError'.format(kwargs_dict["side"]))
-            return False
+            return False, None, None, None
 
         if self.requestedprice < self.marketBTCEUR * 0.8:
-            return False
+            return False, None, None, None
+        
+        return True, orderprice, funds_available_eur, funds_available_btc
+
+    def getclearance(self, kwargs_dict, price_trend_0002, price_trend_002):
+        print('=/DAXY CM GC {}'.format(kwargs_dict['side']))
+        self.requestedprice = kwargs_dict.get("price", 0)   #price already in EUR
+        price_trend_0002 = price_trend_0002 * self.exchangerate #convert fbp to EUR
+        price_trend_002 = price_trend_002 * self.exchangerate       
 
         if kwargs_dict['side'] == 'buy':
-            if self.df_balances['EUR']['available'] > orderprice + 0.5:
-                if self.requestedprice < price_trend_0002:
+            if self.requestedprice < price_trend_0002:
+                return_, orderprice, funds_available_eur, funds_available_btc \
+                        = self.getclearance_balances(kwargs_dict)
+
+                if self.df_balances['EUR']['available'] > orderprice + 0.5 and return_ is True:                
                     if self.ratio_long_oke is True:                        
-                        self.order_size = np.maximum(
-                            funds_available_eur / self.requestedprice * np.random.random() * 0.125, 0.001)
                         return True
                         
                     else:
                         NA = 'ratio long not oke {:0.2f}'.format(self.ratio_long)
                 else:
-                    NA = 'below trend {:0.0f} EUR'.format(price_trend_0002)
+                    NA = 'unsufficient funds: {:0.0f} EUR'.format(funds_available_eur)
             else:
-                NA = 'unsufficient funds: {:0.0f} EUR'.format(funds_available_eur)
+                NA = 'below trend {:0.0f} EUR'.format(price_trend_0002)
 
         if kwargs_dict['side'] == 'sell':
-            if funds_available_btc > 0.001:
-                if self.requestedprice > price_trend_0002:
+            if self.requestedprice > price_trend_0002:
+                return_, orderprice, funds_available_eur, funds_available_btc \
+                        = self.getclearance_balances(kwargs_dict)
+
+                if funds_available_btc > 0.001:                
                     return True
                 else:
-                    NA = 'below trend {:0.0f} EUR'.format(price_trend_0002)
+                    NA = 'unsufficient funds: {:0.0f} BTC'.format(funds_available_btc)
             else:
-                NA = 'unsufficient funds: {:0.0f} BTC'.format(funds_available_btc)
+                NA = 'below trend {:0.0f} EUR'.format(price_trend_0002)
         
         print('=/DAXY CM GC {} NA = {}'.format(kwargs_dict["side"], NA))
         return False
