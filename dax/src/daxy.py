@@ -8,6 +8,8 @@ import random as random
 import json
 import pandas as pd
 import numpy as np
+import sys
+
 from threading import Thread
 
 api = api_keys.api_keys()
@@ -25,9 +27,14 @@ class clearingmaster():
     def __init__(self, client):
         self.client = client
         self.heartbeat_rate = 100  # seconds before we auto cancel limit order
-        self.marketBTCUSD = self.client.get_product_ticker("BTC-USD")
-        self.marketBTCEUR = self.client.get_product_ticker("BTC-EUR")
-        self.exchangerate = float(self.marketBTCEUR["price"]) / float(self.marketBTCUSD["price"])
+        self.longthreshold = 0.6
+        self.getexchangerate()
+
+    def getexchangerate(self):
+        self.marketBTCUSD = float(self.client.get_product_ticker("BTC-USD")["price"])
+        self.marketBTCEUR = float(self.client.get_product_ticker("BTC-EUR")["price"])
+        self.exchangerate = self.marketBTCEUR / self.marketBTCUSD
+        print('DAXY USD-EUR: {:0.3f}'.format(self.exchangerate))
         
     def getorders(self):
         """{'id': 'e22c9172-0276-47f7-b774-2559784c26aa', 'price': '999.85000000', 
@@ -72,37 +79,47 @@ class clearingmaster():
         
         l = ['available','balance','hold']        
         self.df_balances = df_balances.loc[l].astype('float')
+        balance_long = self.df_balances.loc['balance']['EUR']
+        balance_short = self.df_balances.loc['balance']['BTC'] * self.lastknowprice
+        balance_longshort = balance_long + balance_short
+        self.ratio_long = balance_long / balance_longshort
+        self.ratio_long_oke = self.ratio_long < self.longthreshold
+        print('=/DAXY CM GB {} = {}'.format(self.ratio_long, self.ratio_long_oke))
         #print('DAXY DEBUG', self.df_balances)
 
     def getclearance(self, kwargs_dict, price_trend_0002, price_trend_002):
+        self.lastknowprice = kwargs_dict.get("price", 0)
         self.getbalances()
         price_trend_0002 = price_trend_0002 * self.exchangerate
         price_trend_002 = price_trend_002 * self.exchangerate
-        print('=/DAXY CM {}'.format(kwargs_dict['side']))
+        print('=/DAXY CM GC {}'.format(kwargs_dict['side']))
         funds_available_btc = self.df_balances['BTC']['available'] 
         funds_available_eur = self.df_balances['EUR']['available'] 
-        print('=/DAXY CM {} BTC: {:0.3f} EUR: {:0.2f}'\
+        print('=/DAXY CM GC {} BTC: {:0.3f} EUR: {:0.2f}'\
             .format(kwargs_dict['side'], funds_available_btc, funds_available_eur))
         self.order_size = np.maximum(funds_available_btc * np.random.random() * 0.2, 0.001)
 
         try:
-            orderprice = kwargs_dict['price'] * self.order_size
-            print('=/DAXY CM {} received: {:0.2f}EUR {:0.2f}USD'\
-                .format(kwargs_dict['side'], kwargs_dict["price"], kwargs_dict["price"] / self.exchangerate))
+            orderprice = self.lastknowprice * self.order_size
+            print('=/DAXY CM GC {} received: {:0.2f}EUR {:0.2f}USD'\
+                .format(kwargs_dict['side'], self.lastknowprice, self.lastknowprice / self.exchangerate))
         except KeyError:
-            print('=/DAXY CM {} KeyError'.format(kwargs_dict["side"]))
+            print('=/DAXY CM GC {} KeyError'.format(kwargs_dict["side"]))
+            return False
+
+        if self.lastknowprice < self.marketBTCEUR * 0.8:
             return False
 
         if kwargs_dict['side'] == 'buy' and self.df_balances['EUR']['available'] > orderprice + 0.5 \
-                and kwargs_dict["price"] < price_trend_0002:
-            self.order_size = np.maximum(funds_available_eur / kwargs_dict["price"] * np.random.random() * 0.125, 0.001)
+                and self.lastknowprice < price_trend_0002 and self.ratio_long_oke is True:
+            self.order_size = np.maximum(funds_available_eur / self.lastknowprice * np.random.random() * 0.125, 0.001)
             return True
 
         if kwargs_dict['side'] == 'sell' and funds_available_btc > 0.001 \
-                and kwargs_dict["price"] > price_trend_0002:
+                and self.lastknowprice > price_trend_0002:
             return True
         
-        print(kwargs_dict["price"], price_trend_0002)
+        print('=/DAXY CM GC {} NA'.format(kwargs_dict["side"]))
         return False
 
     def heartbeat(self, **kwargs):
