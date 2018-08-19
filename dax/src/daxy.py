@@ -78,19 +78,21 @@ class clearingmaster():
         print('=/DAXY CM {}'.format(kwargs_dict['side']))
         funds_available_btc = self.df_balances['BTC']['available'] 
         funds_available_eur = self.df_balances['EUR']['available'] 
-        print('=/DAXY CM {} funds BTC available: {:0.3f}'.format(kwargs_dict['side'], funds_available_btc))
-        self.order_size = np.maximum(funds_available_btc * np.random.random() * 0.3, 0.001)
+        print('=/DAXY CM {} BTC: {:0.3f} EUR: {:0.2f}'\
+            .format(kwargs_dict['side'], funds_available_btc, funds_available_eur))
+        self.order_size = np.maximum(funds_available_btc * np.random.random() * 0.2, 0.001)
 
         try:
             orderprice = kwargs_dict['price'] * self.order_size
-            print('=/DAXY CM {} received: {:0.2f}'.format(kwargs_dict['side'], orderprice))
+            print('=/DAXY CM {} received: {:0.2f}EUR {:0.2f}USD'\
+                .format(kwargs_dict['side'], kwargs_dict["price"], kwargs_dict["price"] / self.exchangerate))
         except KeyError:
-            print('=/DAXY CM {} KeyError'.format(kwargs_dict['side']))
+            print('=/DAXY CM {} KeyError'.format(kwargs_dict["side"]))
             return False
 
         if kwargs_dict['side'] == 'buy' and self.df_balances['EUR']['available'] > orderprice + 0.5 \
                 and kwargs_dict["price"] <= price_trend_0002:
-            self.order_size = np.maximum(funds_available_eur / kwargs_dict["price"], 0.001)
+            self.order_size = np.maximum(funds_available_eur / kwargs_dict["price"] * np.random.random() * 0.125, 0.001)
             return True
 
         if kwargs_dict['side'] == 'sell' and funds_available_btc > 0.001 \
@@ -101,7 +103,7 @@ class clearingmaster():
 
     def heartbeat(self, **kwargs):
         self.NOW = kwargs.get('NOW', time.time())
-        print('+DAXY HB {}'.format(self.NOW))        
+        print('+DAXY HB')        
         has_orders = self.getorders()
         if has_orders is True:
             cutoffdate = pd.to_datetime(self.NOW-self.heartbeat_rate, unit='s')
@@ -124,9 +126,9 @@ class orderpicker():
         self.trend_fcst_0002 = fbp_change.get('trend_fcst_0002', 0) 
         self.trend_fcst_002 = fbp_change.get('trend_fcst_002', 0) 
 
-        print('DAXY FBP update : ',
-              self.yhat_lower_fcst_0002,self.yhat_lower_fcst_002,self.yhat_upper_fcst_0002,
-              self.yhat_upper_fcst_002,self.trend_fcst_0002,self.trend_fcst_002)
+        print('DAXY FBP update :\nL3:{:0.2f}|L2:{:0.2f}\tT3:{:0.2f}|T2:{:0.2f}\tU2:{:0.2f}|U3:{:0.2f}'\
+                .format(self.yhat_lower_fcst_0002,self.yhat_lower_fcst_002,self.trend_fcst_0002,
+                        self.trend_fcst_002,self.yhat_upper_fcst_002,self.yhat_upper_fcst_0002))
 
         if self.yhat_lower_fcst_002 > 0 and self.yhat_upper_fcst_0002 > 0:
             return True
@@ -134,7 +136,7 @@ class orderpicker():
             return False    
 
     def makeorder(self, lastknowprice, **kwargs):
-        print('+DAXY ORDER : {}'.format(kwargs.get("side", None)))
+        print('+DAXY ORDER {}'.format(kwargs.get("side", None)))
 
         if kwargs["side"] == "sell" and self.yhat_upper_fcst_002 <= lastknowprice:
             print('=DAXY upper 002 broken')
@@ -226,9 +228,39 @@ class mongowatcher():
         self.lastknowprice = 0
         self.counter = 0    
         self.hbcounter = time.time()
+        self.random_wait = 10
+        self.fbp_update = False
 
-    def watcher(self, random_wait=10, fbp_update=False):
-        NOW = time.time()
+    def caller(self):
+        if random.random() < 0.2:
+            NOW = time.time()
+            if NOW - self.hbcounter >= self.random_wait:
+                self.op_.cm_.heartbeat(NOW=NOW)
+                self.hbcounter = NOW
+                self.random_wait = np.random.randint(4,40)
+
+            if self.lastknowprice is not 0 and self.fbp_update is True and self.counter < 30:
+                print('+DAXY ORDER LOOP')
+                random_order = np.random.random()
+
+                if random_order > 0.5:
+                    random_side = 'buy'
+                else:
+                    random_side = 'sell'
+                                
+                flag, TK = self.op_.makeorder(lastknowprice=self.lastknowprice,side=random_side)
+
+                if flag is True:
+                    self.client.ORDER(price=TK['price'], side=TK['side'], size=TK['size']) 
+                else:
+                    print("DAXY NA")
+
+                self.counter += 1
+
+            else:
+                print('DAXY prices at zero')
+
+    def watcher(self):
         with db.watch() as stream:
             for change in stream:
                 if change.get('fullDocument', None) is not None:
@@ -236,7 +268,7 @@ class mongowatcher():
                         if change.get('fullDocument').get('MONGOKEY') == "FBP_UPDATE" and \
                                 change.get('fullDocument').get('product_id', None) == "BTC-USD":
 
-                            fbp_update = self.op_.storefbp(fbp_change=change.get('fullDocument', {}))
+                            self.fbp_update = self.op_.storefbp(fbp_change=change.get('fullDocument', {}))
                             self.counter = 0
 
                         if change.get('fullDocument').get('MONGOKEY', None) == "MARKET_UPDATE" and \
@@ -244,36 +276,12 @@ class mongowatcher():
 
                             self.counter += 1
                             self.lastknowprice = float(change.get('fullDocument').get('y',0))
-                            print('{0} +DAXY price at : {1} - {2}'.\
-                                format(NOW, self.lastknowprice, self.counter))
+                            print('+DAXY price at : {:0.2f} - {}'.\
+                                format(self.lastknowprice, self.counter))
 
-                        if random.random() < 0.1:
-                            NOW = time.time()
-                            if NOW - self.hbcounter >= random_wait:
-                                self.op_.cm_.heartbeat(NOW=NOW)
-                                self.hbcounter = NOW
-                                random_wait = np.random.randint(4,40)
+                        self.caller()
 
-                            if self.lastknowprice is not 0 and fbp_update is True and self.counter < 30:
-                                print('+DAXY ORDER LOOP')
-                                random_order = np.random.random()
-
-                                if random_order > 0.5:
-                                    random_side = 'buy'
-                                else:
-                                    random_side = 'sell'
-                                                
-                                flag, TK = self.op_.makeorder(lastknowprice=self.lastknowprice,side=random_side)
-
-                                if flag is True:
-                                    self.client.ORDER(price=TK['price'], side=TK['side'], size=TK['size']) 
-                                else:
-                                    print("DAXY NA")
-
-                                self.counter += 1
-                                                        
-                            else:
-                                print(NOW, 'DAXY prices at zero')
+                
 
 if __name__ == "__main__":
     print('DAXY starting')
