@@ -81,12 +81,12 @@ class clearingmaster():
         print('=/DAXY CM GC {} BTC: {:0.3f} EUR: {:0.0f}'\
             .format(kwargs_dict['side'], funds_available_btc, funds_available_eur))
 
-        if kwargs_dict["side"] == "buy":
-            self.order_size = np.maximum(funds_available_btc * np.random.random() * 0.2, 0.001)
-
-        elif kwargs_dict["side"] == "sell":
+        if kwargs_dict["side"] == "buy":            
             self.order_size = np.maximum(
                                 funds_available_eur / self.requestedprice * np.random.random() * 0.125, 0.001)
+
+        elif kwargs_dict["side"] == "sell":
+            self.order_size = np.maximum(funds_available_btc * np.random.random() * 0.2, 0.001)
 
         try:
             orderprice = self.requestedprice * self.order_size
