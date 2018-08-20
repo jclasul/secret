@@ -68,8 +68,8 @@ class clearingmaster():
         self.df_balances = df_balances.loc[l].astype('float')
         balance_long = self.df_balances.loc['balance']['EUR']
         balance_short = self.df_balances.loc['balance']['BTC'] * self.requestedprice
-        balance_longshort = balance_long + balance_short
-        self.ratio_long = balance_long / balance_longshort
+        self.balance_longshort = balance_long + balance_short
+        self.ratio_long = balance_long / self.balance_longshort
         self.ratio_long_oke = self.ratio_long < self.longthreshold
         print('=/DAXY CM GB {:0.2f} = {}'.format(self.ratio_long, self.ratio_long_oke))
         #print('DAXY DEBUG', self.df_balances)
@@ -86,7 +86,7 @@ class clearingmaster():
 
         elif kwargs_dict["side"] == "sell":
             self.order_size = np.maximum(
-                                funds_available_eur / self.requestedprice * np.random.random() * 0.125, 0.001)
+                funds_available_eur / self.requestedprice * np.random.random() * np.random.random() , 0.001)
 
         try:
             orderprice = self.requestedprice * self.order_size
@@ -275,9 +275,17 @@ class mongowatcher():
             time.sleep(1)
 
             exchange_update_counter += 1
-            if exchange_update_counter > 600:
+            if exchange_update_counter > 10:
+                print('testing')
                 self.op_.cm_.getexchangerate()
                 exchange_update_counter = 0
+                try:
+                    db.insert_one({'MONGOKEY':'BALANCE',
+                                   'timestamp':time.time(),
+                                   'product_id':'BTC-USD',
+                                   'balance':self.op_.cm_.balance_longshort})
+                except Exception:
+                    pass
 
     def caller(self):
         NOW = time.time()
@@ -315,8 +323,9 @@ class mongowatcher():
     def watcher(self):
         with db.watch() as stream:
             for change in stream:
-                if change.get('fullDocument', None) is not None:
-                    if change.get('fullDocument').get('MONGOKEY', None) is not "BUY_ORDER":
+                if change.get('fullDocument', None) is not None \
+                        and change.get('fullDocument').get('MONGOKEY') is not None:
+                    if change.get('fullDocument').get('MONGOKEY', '').find('UPDATE') > 1:
                         if change.get('fullDocument').get('MONGOKEY') == "FBP_UPDATE" and \
                                 change.get('fullDocument').get('product_id', None) == "BTC-USD":
 
