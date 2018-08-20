@@ -275,7 +275,7 @@ class mongowatcher():
             time.sleep(1)
 
             exchange_update_counter += 1
-            if exchange_update_counter > 10:
+            if exchange_update_counter > 100:
                 print('testing')
                 self.op_.cm_.getexchangerate()
                 exchange_update_counter = 0
