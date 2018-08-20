@@ -66,34 +66,34 @@ class clearingmaster():
         
         l = ['available','balance','hold']        
         self.df_balances = df_balances.loc[l].astype('float')
+        balance_long = self.df_balances.loc['balance']['EUR']
+        balance_short = self.df_balances.loc['balance']['BTC'] * self.requestedprice
+        self.balance_longshort = balance_long + balance_short
+        self.ratio_long = balance_long / self.balance_longshort
+        self.ratio_long_oke = self.ratio_long < self.longthreshold
+        print('=/DAXY CM GB {:0.2f} = {}'.format(self.ratio_long, self.ratio_long_oke))
         #print('DAXY DEBUG', self.df_balances)
 
     def getclearance_balances(self, kwargs_dict):
         self.getbalances()                
         funds_available_btc = self.df_balances['BTC']['available'] 
         funds_available_eur = self.df_balances['EUR']['available'] 
-        print('=/DAXY CM GCb {} BTC: {:0.3f} EUR: {:0.0f}'\
+        print('=/DAXY CM GC {} BTC: {:0.3f} EUR: {:0.0f}'\
             .format(kwargs_dict['side'], funds_available_btc, funds_available_eur))
 
-        if kwargs_dict["side"] == "buy":            
-            self.order_size = np.maximum(
-                                funds_available_eur / self.requestedprice * np.random.random() * 0.125, 0.001)
-        elif kwargs_dict["side"] == "sell":
+        if kwargs_dict["side"] == "buy":
             self.order_size = np.maximum(funds_available_btc * np.random.random() * 0.2, 0.001)
+
+        elif kwargs_dict["side"] == "sell":
+            self.order_size = np.maximum(
+                funds_available_eur / self.requestedprice * np.random.random() * np.random.random() , 0.001)
 
         try:
             orderprice = self.requestedprice * self.order_size
-            print('=/DAXY CM GCb {} received: {:0.0f} EUR {:0.0f} USD'\
+            print('=/DAXY CM GC {} received: {:0.0f} EUR {:0.0f} USD'\
                 .format(kwargs_dict['side'], self.requestedprice, self.requestedprice / self.exchangerate))
-            balance_long = self.df_balances.loc['balance']['EUR']
-            balance_short = self.df_balances.loc['balance']['BTC'] * self.requestedprice
-            balance_longshort = balance_long + balance_short
-            if kwargs_dict["side"] == "buy" and balance_longshort - orderprice < balance_longshort/2:
-                print('=/DAXY CM GCb {} KeyError'.format(kwargs_dict["side"]))
-                return False, None, None, None
-
         except KeyError:
-            print('=/DAXY CM GCb {} KeyError'.format(kwargs_dict["side"]))
+            print('=/DAXY CM GC {} KeyError'.format(kwargs_dict["side"]))
             return False, None, None, None
 
         if self.requestedprice < self.marketBTCEUR * 0.8:
@@ -112,9 +112,12 @@ class clearingmaster():
                 return_, orderprice, funds_available_eur, funds_available_btc \
                         = self.getclearance_balances(kwargs_dict)
 
-                if self.df_balances['EUR']['available'] > orderprice + 0.5 and return_ is True:                                      
-                    return True
+                if self.df_balances['EUR']['available'] > orderprice + 0.5 and return_ is True:                
+                    if self.ratio_long_oke is True:                        
+                        return True
                         
+                    else:
+                        NA = 'ratio long not oke {:0.2f}'.format(self.ratio_long)
                 else:
                     NA = 'unsufficient funds: {:0.0f} EUR'.format(funds_available_eur)
             else:
@@ -272,9 +275,17 @@ class mongowatcher():
             time.sleep(1)
 
             exchange_update_counter += 1
-            if exchange_update_counter > 600:
+            if exchange_update_counter > 10:
+                print('testing')
                 self.op_.cm_.getexchangerate()
                 exchange_update_counter = 0
+                try:
+                    db.insert_one({'MONGOKEY':'BALANCE',
+                                   'timestamp':time.time(),
+                                   'product_id':'BTC-USD',
+                                   'balance':self.op_.cm_.balance_longshort})
+                except Exception:
+                    pass
 
     def caller(self):
         NOW = time.time()
@@ -285,7 +296,7 @@ class mongowatcher():
         if self.lastknowprice is not 0 and self.fbp_update is True \
                 and self.counter < 30 and NOW - self.ordertimer > 5:
 
-            if random.random() > 0.50:
+            if random.random() > 0.60:
                 print('+DAXY ORDER LOOP')
                 random_order = np.random.random()
 
@@ -312,8 +323,9 @@ class mongowatcher():
     def watcher(self):
         with db.watch() as stream:
             for change in stream:
-                if change.get('fullDocument', None) is not None:
-                    if change.get('fullDocument').get('MONGOKEY', None) is not "BUY_ORDER":
+                if change.get('fullDocument', None) is not None \
+                        and change.get('fullDocument').get('MONGOKEY') is not None:
+                    if change.get('fullDocument').get('MONGOKEY', '').find('UPDATE') > 1:
                         if change.get('fullDocument').get('MONGOKEY') == "FBP_UPDATE" and \
                                 change.get('fullDocument').get('product_id', None) == "BTC-USD":
 
