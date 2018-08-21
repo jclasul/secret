@@ -27,7 +27,7 @@ class clearingmaster():
     def __init__(self, client):
         self.client = client
         self.heartbeat_rate = 100  # seconds before we auto cancel limit order
-        self.longthreshold = 0.6
+        self.longthreshold = 0.4
         self.getexchangerate()
 
     def getexchangerate(self):
@@ -69,8 +69,8 @@ class clearingmaster():
         balance_long = self.df_balances.loc['balance']['EUR']
         balance_short = self.df_balances.loc['balance']['BTC'] * self.requestedprice
         self.balance_longshort = balance_long + balance_short
-        self.ratio_long = balance_long / self.balance_longshort
-        self.ratio_long_oke = self.ratio_long < self.longthreshold
+        self.ratio_long = float(balance_long / self.balance_longshort)
+        self.ratio_long_oke = self.ratio_long > self.longthreshold
         print('=/DAXY CM GB {:0.2f} = {}'.format(self.ratio_long, self.ratio_long_oke))
         #print('DAXY DEBUG', self.df_balances)
 
@@ -82,11 +82,11 @@ class clearingmaster():
             .format(kwargs_dict['side'], funds_available_btc, funds_available_eur))
 
         if kwargs_dict["side"] == "buy":
-            self.order_size = np.maximum(funds_available_btc * np.random.random() * 0.2, 0.001)
+            self.order_size = np.maximum(
+                    funds_available_eur / self.requestedprice * np.random.random() * np.random.random() , 0.001)
 
         elif kwargs_dict["side"] == "sell":
-            self.order_size = np.maximum(
-                funds_available_eur / self.requestedprice * np.random.random() * np.random.random() , 0.001)
+            self.order_size = np.maximum(funds_available_btc * np.random.random() * 0.2, 0.001)
 
         try:
             orderprice = self.requestedprice * self.order_size
