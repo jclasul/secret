@@ -27,7 +27,7 @@ class clearingmaster():
     def __init__(self, client):
         self.client = client
         self.heartbeat_rate = 100  # seconds before we auto cancel limit order
-        self.longthreshold = 0.4
+        self.longthreshold = 0.625
         self.getexchangerate()
 
     def getexchangerate(self):
@@ -175,17 +175,20 @@ class orderpicker():
     def makeorder(self, lastknowprice, **kwargs):
         print('+DAXY ORDER {}'.format(kwargs.get("side", None)))
 
+        r = random.randint(99980,100020)/100000
         if kwargs["side"] == "sell" and self.yhat_upper_fcst_002 <= lastknowprice:
             print('=DAXY upper 002 broken')
+            self.cm_.heartbeat()
             kwargs["price"] = lastknowprice*1.0035
         elif kwargs["side"] == "sell":
-            kwargs["price"] = self.yhat_upper_fcst_002
-
+            kwargs["price"] = self.yhat_upper_fcst_002 * r
+        
         if kwargs["side"] == "buy" and self.yhat_lower_fcst_002 >= lastknowprice:
             print('=DAXY lower 002 broken')
-            kwargs["price"] = lastknowprice*0.997     
+            self.cm_.heartbeat()
+            kwargs["price"] = lastknowprice * 0.99626401  
         elif kwargs["side"] == "buy":
-            kwargs["price"] = self.yhat_lower_fcst_002
+            kwargs["price"] = self.yhat_lower_fcst_002 * r
 
         kwargs["price"] = np.round(kwargs["price"] * self.cm_.exchangerate, 2)
 
@@ -275,7 +278,7 @@ class mongowatcher():
             time.sleep(1)
 
             exchange_update_counter += 1
-            if exchange_update_counter > 100:
+            if exchange_update_counter > 600:
                 print('testing')
                 self.op_.cm_.getexchangerate()
                 exchange_update_counter = 0
