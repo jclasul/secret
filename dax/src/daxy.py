@@ -27,7 +27,7 @@ class clearingmaster():
     def __init__(self, client):
         self.client = client
         self.heartbeat_rate = 100  # seconds before we auto cancel limit order
-        self.longthreshold = 0.625
+        self.longthreshold = 0.35
         self.getexchangerate()
 
     def getexchangerate(self):
@@ -70,6 +70,7 @@ class clearingmaster():
         balance_short = self.df_balances.loc['balance']['BTC'] * self.requestedprice
         self.balance_longshort = balance_long + balance_short
         self.ratio_long = float(balance_long / self.balance_longshort)
+        self.ratio_longshort = float(balance_long) / float(balance_short)
         self.ratio_long_oke = self.ratio_long > self.longthreshold
         print('=/DAXY CM GB {:0.2f} = {}'.format(self.ratio_long, self.ratio_long_oke))
         #print('DAXY DEBUG', self.df_balances)
