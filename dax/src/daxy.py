@@ -163,13 +163,17 @@ class clearingmaster():
     def heartbeat(self, **kwargs):                                      # __F:caller @__:getorders
         self.NOW        = kwargs.get('NOW', time.time())
         heartbeat_rate  = kwargs.get('heartbeat_rate', self.heartbeat_rate)
+        product_id      = kwargs.get('product_id', 'BTC-EUR')
+        order_side      = kwargs.get('side', None)
 
         print('+DAXY HB')        
 
         has_orders = self.getorders()
         if has_orders is True:
             cutoffdate = pd.to_datetime(self.NOW-heartbeat_rate, unit='s')
-            to_terminate = self.df_openorders[self.df_openorders["created_at"]<cutoffdate]['id']
+            to_terminate = self.df_openorders[(self.df_openorders["created_at"]<cutoffdate) & \
+                                              (self.df_openorders["product_id"]==product_id) & \
+                                              (self.df_openorders["side"]==order_side)]['id']
             for idtoterminate in to_terminate:
                 response_cancel = self.client.cancel_order(idtoterminate) 
                 db.delete_one({'MONGOKEY':'BUY_ORDER','trade_id': idtoterminate})
@@ -231,8 +235,9 @@ class orderpicker():
 
     def makeorder(self, **kwargs):      # takes in USD converts to EUR  # __F:caller @__:getclearance
         product_id                  =   kwargs.get('product_id', None)  # !! BTC-USD and ETH-USD !!
+        product_id_EUR              =   product_id.split('-')[0] + '-EUR'
         order_side                  =   kwargs.get("side", None)
-        r                           =   random.randint(99980,100020)/100000
+        r                           =   random.randint(99960,100040)/100000
         lastknowprice               =   self.lastknowprice[product_id]
         yhat_lower_fcst_002         =   self.yhat_lower_fcst_002[product_id]
         yhat_upper_fcst_002         =   self.yhat_upper_fcst_002[product_id]
@@ -243,20 +248,20 @@ class orderpicker():
         
         if order_side == "sell" and yhat_upper_fcst_002 <= lastknowprice:           # make price __SELL
             print('=DAXY upper 002 broken')
-            self.cm_.heartbeat(heartbeat_rate=5)  
+            self.cm_.heartbeat(heartbeat_rate=5, product_id=product_id_EUR, order_side=order_side)  
             kwargs["price"] = lastknowprice * 1.00275
         elif order_side == "sell":
             kwargs["price"] = yhat_upper_fcst_002 * r
         
         if order_side == "buy" and yhat_lower_fcst_002 >= lastknowprice:            # make price __BUY
             print('=DAXY lower 002 broken')
-            self.cm_.heartbeat(heartbeat_rate=3)
+            self.cm_.heartbeat(heartbeat_rate=3, product_id=product_id_EUR, order_side=order_side)
             kwargs["price"] = lastknowprice * 0.99626401  
         elif order_side == "buy":
             kwargs["price"] = yhat_lower_fcst_002 * r
 
         kwargs["price"]             =   np.round(kwargs["price"] * self.cm_.exchangerate, 2)   # !! price converted to EUR !!
-        kwargs["product_id"]        =   product_id.split('-')[0] + '-EUR'                      # also convert product id to EUR
+        kwargs["product_id"]        =   product_id_EUR                         # also convert product id to EUR
 
         trade_request = self.cm_.getclearance(kwargs_dict=kwargs, 
                                               price_trend_0002=trend_fcst_0002, 
@@ -324,7 +329,12 @@ class mongowatcher():
     def caller(self):
         NOW = time.time()
         if NOW - self.hbcounter >= 100:
-            self.op_.cm_.heartbeat(NOW=NOW)                                                     # __HB_order_canceller
+            if random.random() > 0.5:
+                order_side="buy"
+            else:
+                order_side="sell"
+
+            self.op_.cm_.heartbeat(NOW=NOW, order_side=order_side)                                   # __HB_order_canceller
             self.hbcounter = NOW
 
         if self._update['BTC-USD'] is True and self._update['ETH-USD'] is True \
