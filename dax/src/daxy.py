@@ -1,4 +1,5 @@
 from pymongo import MongoClient
+import pymongo
 from bson.objectid import ObjectId
 import time
 import api_keys
@@ -82,12 +83,13 @@ class clearingmaster():
         print('=/DAXY CM GC {} BTC: {:0.3f} EUR: {:0.0f}'\
             .format(kwargs_dict['side'], funds_available_btc, funds_available_eur))
 
+        r_size = random.randint(100,2000)/10000 #between 1 and 20%
         if kwargs_dict["side"] == "buy":
             self.order_size = np.maximum(
-                    funds_available_eur / self.requestedprice * np.random.random() * np.random.random() , 0.001)
+                    funds_available_eur / self.requestedprice * r_size, 0.001)
 
         elif kwargs_dict["side"] == "sell":
-            self.order_size = np.maximum(funds_available_btc * np.random.random() * 0.2, 0.001)
+            self.order_size = np.maximum(funds_available_btc * r_size, 0.001)
 
         try:
             orderprice = self.requestedprice * self.order_size
@@ -155,6 +157,13 @@ class clearingmaster():
 class orderpicker():
     def __init__(self, client):
         self.cm_ = clearingmaster(client)
+        self.lastknowprice = 0
+        self.yhat_lower_fcst_0002 = 0
+        self.yhat_lower_fcst_002 = 0
+        self.yhat_upper_fcst_0002 = 0
+        self.yhat_upper_fcst_002 = 0
+        self.trend_fcst_0002 = 0
+        self.trend_fcst_002 = 0
 
     def storefbp(self, fbp_change):
         self.yhat_lower_fcst_0002 = fbp_change.get('yhat_lower_fcst_0002', 0) 
@@ -173,21 +182,29 @@ class orderpicker():
         else:
             return False    
 
-    def makeorder(self, lastknowprice, **kwargs):
-        print('+DAXY ORDER {}'.format(kwargs.get("side", None)))
+    def storemarket(self, market_change):
+        self.lastknowprice = market_change.get('y', 0)
+        print('{}+DAXY price at : {:0.0f} USD'.format(market_change.get('time', None),self.lastknowprice))
 
+        if self.lastknowprice > self.cm_.marketBTCUSD * 0.8:
+            return True
+        else:
+            return False
+
+    def makeorder(self, **kwargs):
+        print('+DAXY ORDER {}'.format(kwargs.get("side", None)))
         r = random.randint(99980,100020)/100000
-        if kwargs["side"] == "sell" and self.yhat_upper_fcst_002 <= lastknowprice:
+        if kwargs["side"] == "sell" and self.yhat_upper_fcst_002 <= self.lastknowprice:
             print('=DAXY upper 002 broken')
             self.cm_.heartbeat()
-            kwargs["price"] = lastknowprice*1.0035
+            kwargs["price"] = self.lastknowprice*1.0035
         elif kwargs["side"] == "sell":
             kwargs["price"] = self.yhat_upper_fcst_002 * r
         
-        if kwargs["side"] == "buy" and self.yhat_lower_fcst_002 >= lastknowprice:
+        if kwargs["side"] == "buy" and self.yhat_lower_fcst_002 >= self.lastknowprice:
             print('=DAXY lower 002 broken')
             self.cm_.heartbeat()
-            kwargs["price"] = lastknowprice * 0.99626401  
+            kwargs["price"] = self.lastknowprice * 0.99626401  
         elif kwargs["side"] == "buy":
             kwargs["price"] = self.yhat_lower_fcst_002 * r
 
@@ -230,7 +247,9 @@ class GAC(gdax.AuthenticatedClient):
 
         kwargs["type"] = "limit"
         kwargs["post_only"] = True
-        kwargs["product_id"] = "BTC-EUR"        
+        kwargs["product_id"] = "BTC-EUR"    
+        kwargs["time_in_force"] = "GTT"
+        kwargs["cancel_after"] = "min" 
         print("=DAXY TRADING")
 
         kwargs.pop('trend_price', None)
@@ -266,40 +285,24 @@ class mongowatcher():
                                     api_url="https://api.pro.coinbase.com")
     
         self.op_ = orderpicker(self.client)        
-        self.lastknowprice = 0
-        self.counter = 0    
         self.hbcounter = time.time()
         self.ordertimer = self.hbcounter
-        self.fbp_update = False
+        self._update = False
+        self.order_interval = 30
+        self.UPDATE_HANDLER = {'FBP_UPDATE':self.op_.storefbp,
+                                'MARKET_UPDATE':self.op_.storemarket,
+                                'None':self.error_pass}
 
-    def caller_wrapper(self):
-        exchange_update_counter = 0
-        while True:
-            self.caller()
-            time.sleep(1)
-
-            exchange_update_counter += 1
-            if exchange_update_counter > 600:
-                print('testing')
-                self.op_.cm_.getexchangerate()
-                exchange_update_counter = 0
-                try:
-                    db.insert_one({'MONGOKEY':'BALANCE',
-                                   'timestamp':time.time(),
-                                   'product_id':'BTC-USD',
-                                   'balance':self.op_.cm_.balance_longshort})
-                except Exception:
-                    pass
+    def error_pass(self):
+        print('DAXY ERROR_PASS')
 
     def caller(self):
         NOW = time.time()
-        if NOW - self.hbcounter >= 30:
+        if NOW - self.hbcounter >= 100:
             self.op_.cm_.heartbeat(NOW=NOW)
             self.hbcounter = NOW
 
-        if self.lastknowprice is not 0 and self.fbp_update is True \
-                and self.counter < 30 and NOW - self.ordertimer > 5:
-
+        if self._update is True and NOW - self.ordertimer > self.order_interval:
             if random.random() > 0.60:
                 print('+DAXY ORDER LOOP')
                 random_order = np.random.random()
@@ -309,40 +312,54 @@ class mongowatcher():
                 else:
                     random_side = 'sell'
                                 
-                flag, TK = self.op_.makeorder(lastknowprice=self.lastknowprice,side=random_side)
+                flag, TK = self.op_.makeorder(side=random_side)
 
                 if flag is True:
                     self.client.ORDER(price=TK['price'], side=TK['side'], size=TK['size']) 
                 else:
                     pass
 
-                self.counter += 1
                 self.ordertimer = NOW
             else:
                 self.ordertimer = NOW
+
+            self.order_interval = 8
 
         else:
             pass
 
     def watcher(self):
-        with db.watch() as stream:
-            for change in stream:
-                if change.get('fullDocument', None) is not None \
-                        and change.get('fullDocument').get('MONGOKEY') is not None:
-                    if change.get('fullDocument').get('MONGOKEY', '').find('UPDATE') > 1:
-                        if change.get('fullDocument').get('MONGOKEY') == "FBP_UPDATE" and \
-                                change.get('fullDocument').get('product_id', None) == "BTC-USD":
+        try:
+            with db.watch(
+                    [{'$match':{'operationType': "insert"}},{'$replaceRoot':{'newRoot':'$fullDocument'}},
+                     {'$match':{'product_id':'BTC-USD'}},
+                     {'$match':{'MONGOKEY':{'$in': ['FBP_UPDATE', 'MARKET_UPDATE']}}}]) as stream:
+                for insert_change in stream:
+                    change_type = insert_change.get('MONGOKEY', 'None') # either FBP_UPDATE or MARKET_UPDATE
+                    self._update = self.UPDATE_HANDLER[change_type](insert_change)                    
+        except pymongo.errors.PyMongoError:
+            # The ChangeStream encountered an unrecoverable error or the
+            # resume attempt failed to recreate the cursor.
+            print('DAXY MONGO WATCH ERROR')
+            pass
 
-                            self.fbp_update = self.op_.storefbp(fbp_change=change.get('fullDocument', {}))
-                            self.counter = 0
+    def caller_wrapper(self):
+        exchange_update_counter = 0
+        while True:
+            self.caller()
+            time.sleep(1)
 
-                        if change.get('fullDocument').get('MONGOKEY', None) == "MARKET_UPDATE" and \
-                                change.get('fullDocument').get('product_id', None) == "BTC-USD":
-
-                            self.counter += 1
-                            self.lastknowprice = float(change.get('fullDocument').get('y',0))
-                            print('{}+DAXY price at : {:0.0f} USD'.\
-                                format(self.counter, self.lastknowprice))
+            exchange_update_counter += 1
+            if exchange_update_counter > 600:
+                self.op_.cm_.getexchangerate()
+                exchange_update_counter = 0
+                try:
+                    db.insert_one({'MONGOKEY':'BALANCE',
+                                   'timestamp':time.time(),
+                                   'product_id':'BTC-USD',
+                                   'balance':self.op_.cm_.balance_longshort})
+                except Exception:
+                    pass
 
 if __name__ == "__main__":
     mw_ = mongowatcher()
