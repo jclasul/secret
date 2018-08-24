@@ -371,7 +371,7 @@ class mongowatcher():
     def caller(self):
         NOW                         =   time.time()
         if NOW - self.hbcounter     >=  100:
-            if random.random()      >   0.5:
+            if random.random()      >   self.op_.cm_.longshort_adj:
                 order_side          =   "buy"
             else:
                 order_side          =   "sell"
@@ -380,7 +380,7 @@ class mongowatcher():
             self.hbcounter          =   NOW
 
         if all(self._update.values()) is True and NOW - self.ordertimer > self.order_interval:
-            if random.random()      >   0.60:
+            if random.random()      >   0.3:
                 print('+DAXY ORDER LOOP')
                 random_order        =   np.random.random(2)
 
