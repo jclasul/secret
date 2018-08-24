@@ -27,14 +27,14 @@ passphrase = api.passphrase
 class clearingmaster():
     def __init__(self, client):
         self.client         =   client
-        self.heartbeat_rate =   30 # seconds before we auto cancel limit order
+        self.heartbeat_rate =   100 # seconds before we auto cancel limit order
         self.longthreshold  =   0.35
         self.minimum_order  =   {'BTC-EUR':0.001,'BTC-USD':0.001,
                                  'ETH-EUR':0.01,'ETH-USD':0.01}
 
         self.getexchangerate()
 
-    def getexchangerate(self):                                          # __F:caller
+    def getexchangerate(self):  # __F:caller
         histBTCEUR          =   float(self.client.get_product_ticker("BTC-EUR")["price"])
         histETHUSD          =   float(self.client.get_product_ticker("ETH-USD")["price"])
         histBTCUSD          =   float(self.client.get_product_ticker("BTC-USD")["price"])
@@ -72,46 +72,48 @@ class clearingmaster():
             'balance': '0.0530287336346057', 'avai`lable': '0.0530287336346057',
             'hold': '0.0000000000000000', 'profile_id': '5100622b-3ed2-49e4-9810-c28fb96d30b3'} """
 
-        balances = self.client.get_accounts()
-        df_balances = pd.DataFrame(balances).query('currency in ("BTC","EUR","ETH")').T
-        df_balances.rename(columns=df_balances.loc['currency'], inplace=True)
+        balances                = self.client.get_accounts()
+        df_balances             = pd.DataFrame(balances)\
+                                        .query('currency in ("BTC","EUR","ETH")').T
+        df_balances             = df_balances\
+                                        .rename(columns=df_balances.loc['currency'])
         
         l = ['available','balance','hold']        
-        self.df_balances = df_balances.loc[l].astype('float')
+        self.df_balances        = df_balances.loc[l].astype('float')
 
-        balance_long = self.df_balances.loc['balance']['EUR']
-        balance_short = self.df_balances.loc['balance']['BTC'] * self.historicrates['BTC-EUR'] \
-                            + self.df_balances.loc['balance']['ETH'] * self.historicrates['ETH-EUR']
+        balance_long            = self.df_balances.loc['balance']['EUR']
+        balance_short           = self.df_balances.loc['balance']['BTC'] * self.historicrates['BTC-EUR'] \
+                                        + self.df_balances.loc['balance']['ETH'] * self.historicrates['ETH-EUR']
 
-        self.balance_longshort = balance_long + balance_short
-        self.ratio_long = float(balance_long / self.balance_longshort)
-        self.ratio_long_oke = self.ratio_long > self.longthreshold
+        self.balance_longshort  = balance_long + balance_short
+        self.ratio_long         = float(balance_long / self.balance_longshort)
+        self.ratio_long_oke     = self.ratio_long > self.longthreshold
         print('=/DAXY CM GB {:0.2f} = {}'.format(self.ratio_long, self.ratio_long_oke))
         #print('DAXY DEBUG', self.df_balances)
 
     def getclearance_balances(self, kwargs_dict):     # ALL IN EUR      # __F:getclearance @__:getbalance
         self.getbalances()                  # __func_order_BALANCE
 
-        order_side                  =   kwargs_dict["side"]
-        product_id                  =   kwargs_dict["product_id"]   
-        crypto_id                   =   product_id.split('-')[0]              
-        funds_available_crypto      =   self.df_balances[crypto_id]['available'] 
-        funds_available_eur         =   self.df_balances['EUR']['available'] 
-        minimum_order               =   self.minimum_order[product_id]
-        r_size                      =   random.randint(100,2000)/10000 #between 1 and 20%
+        order_side              =   kwargs_dict["side"]
+        product_id              =   kwargs_dict["product_id"]   
+        crypto_id               =   product_id.split('-')[0]              
+        funds_available_crypto  =   self.df_balances[crypto_id]['available'] 
+        funds_available_eur     =   self.df_balances['EUR']['available'] 
+        minimum_order           =   self.minimum_order[product_id]
+        r_size                  =   random.randint(100,2000)/10000 #between 1 and 20%
 
         print('=/DAXY CM GC {} CRYPTO: {:0.3f} EUR: {:0.0f}'\
             .format(order_side, funds_available_crypto, funds_available_eur))
         
         if order_side == "buy":
-            self.order_size = np.maximum(
+            self.order_size     = np.maximum(
                     funds_available_eur / self.requestedprice * r_size, minimum_order)
 
         elif order_side == "sell":
-            self.order_size = np.maximum(funds_available_crypto * r_size, minimum_order)
+            self.order_size     = np.maximum(funds_available_crypto * r_size, minimum_order)
 
         try:
-            orderprice = self.requestedprice * self.order_size
+            orderprice          = self.requestedprice * self.order_size
             print('=/DAXY CM GC {} received: {:0.0f} EUR {:0.0f} USD'\
                 .format(kwargs_dict['side'], self.requestedprice, self.requestedprice / self.exchangerate))
         except KeyError:
@@ -123,16 +125,16 @@ class clearingmaster():
         
         return True, orderprice, funds_available_eur, funds_available_crypto
 
-    def getclearance(self, kwargs_dict, price_trend_0002, price_trend_002):     # __F:makeorder @__:getclearance_balance
-        order_side                  =   kwargs_dict.get('side', None)        
-        self.requestedprice         =   kwargs_dict.get("price", 0) #price already in EUR
+    def getclearance(self, kwargs_dict, price_trend_0002, price_trend_002): # __F:makeorder @__:getclearance_balance
+        order_side              =   kwargs_dict.get('side', None)        
+        self.requestedprice     =   kwargs_dict.get("price", 0) #price already in EUR
 
         print('=/DAXY CM GC {}'.format(kwargs_dict['side']))
                 
         if order_side == 'buy':
             if self.requestedprice < price_trend_0002:
                 return_, orderprice, funds_available_eur, funds_available_crypto \
-                        = self.getclearance_balances(kwargs_dict)                       # __order_func_balance
+                                = self.getclearance_balances(kwargs_dict)   # __order_func_balance
 
                 if self.df_balances['EUR']['available'] > orderprice + 0.5 and return_ is True:                
                     if self.ratio_long_oke is True:                        
@@ -148,7 +150,7 @@ class clearingmaster():
         if order_side == 'sell':
             if self.requestedprice > price_trend_0002:
                 return_, orderprice, funds_available_eur, funds_available_crypto \
-                        = self.getclearance_balances(kwargs_dict)                       # __order_func_balance
+                                = self.getclearance_balances(kwargs_dict)   # __order_func_balance
 
                 if funds_available_crypto > 0.001:                
                     return True
@@ -160,20 +162,20 @@ class clearingmaster():
         print('=/DAXY CM GC {} NA = {}'.format(kwargs_dict["side"], NA))
         return False
 
-    def heartbeat(self, **kwargs):                                      # __F:caller @__:getorders
-        self.NOW        = kwargs.get('NOW', time.time())
-        heartbeat_rate  = kwargs.get('heartbeat_rate', self.heartbeat_rate)
-        product_id      = kwargs.get('product_id', 'BTC-EUR')
-        order_side      = kwargs.get('side', None)
+    def heartbeat(self, **kwargs):  # __F:caller @__:getorders
+        self.NOW                = kwargs.get('NOW', time.time())
+        heartbeat_rate          = kwargs.get('heartbeat_rate', self.heartbeat_rate)
+        product_id              = kwargs.get('product_id', 'BTC-EUR')
+        order_side              = kwargs.get('side', None)
 
         print('+DAXY HB')        
 
-        has_orders = self.getorders()
+        has_orders              = self.getorders()
         if has_orders is True:
-            cutoffdate = pd.to_datetime(self.NOW-heartbeat_rate, unit='s')
-            to_terminate = self.df_openorders[(self.df_openorders["created_at"]<cutoffdate) & \
-                                              (self.df_openorders["product_id"]==product_id) & \
-                                              (self.df_openorders["side"]==order_side)]['id']
+            cutoffdate          = pd.to_datetime(self.NOW-heartbeat_rate, unit='s')
+            to_terminate        = self.df_openorders[(self.df_openorders["created_at"]<cutoffdate) & \
+                                                    (self.df_openorders["product_id"]==product_id) & \
+                                                    (self.df_openorders["side"]==order_side)]['id']
             for idtoterminate in to_terminate:
                 response_cancel = self.client.cancel_order(idtoterminate) 
                 db.delete_one({'MONGOKEY':'BUY_ORDER','trade_id': idtoterminate})
@@ -192,7 +194,7 @@ class orderpicker():
         self.trend_fcst_0002       =  {'BTC-USD':0,'ETH-USD':0}
         self.trend_fcst_002        =  {'BTC-USD':0,'ETH-USD':0}
 
-    def storefbp(self, fbp_change):                                     # __F:watcher 
+    def storefbp(self, fbp_change): # __F:watcher 
         product_id                 =  fbp_change.get('product_id', 'None')
 
         yhat_lower_fcst_0002       =  fbp_change.get('yhat_lower_fcst_0002', 0) 
@@ -220,7 +222,7 @@ class orderpicker():
         else:
             return False    
 
-    def storemarket(self, market_change):                               # __F:watcher
+    def storemarket(self, market_change):   # __F:watcher
         product_id                  =   market_change.get('product_id', None)
         lastknowprice               =   float(market_change.get('y', 0))
 
@@ -246,35 +248,37 @@ class orderpicker():
 
         print('+DAXY {} ORDER {}'.format(product_id, order_side))
         
-        if order_side == "sell" and yhat_upper_fcst_002 <= lastknowprice:           # make price __SELL
+        if order_side == "sell" and yhat_upper_fcst_002 <= lastknowprice:   # make price __SELL
             print('=DAXY upper 002 broken')
             self.cm_.heartbeat(heartbeat_rate=5, product_id=product_id_EUR, order_side=order_side)  
-            kwargs["price"] = lastknowprice * 1.00275
+            kwargs["price"]         =   lastknowprice * 1.00275
         elif order_side == "sell":
-            kwargs["price"] = yhat_upper_fcst_002 * r
+            kwargs["price"]         =   yhat_upper_fcst_002 * r
         
-        if order_side == "buy" and yhat_lower_fcst_002 >= lastknowprice:            # make price __BUY
+        if order_side == "buy" and yhat_lower_fcst_002 >= lastknowprice:    # make price __BUY
             print('=DAXY lower 002 broken')
             self.cm_.heartbeat(heartbeat_rate=3, product_id=product_id_EUR, order_side=order_side)
-            kwargs["price"] = lastknowprice * 0.99626401  
+            kwargs["price"]         =   lastknowprice * 0.99626401  
         elif order_side == "buy":
-            kwargs["price"] = yhat_lower_fcst_002 * r
+            kwargs["price"]         =   yhat_lower_fcst_002 * r
 
-        kwargs["price"]             =   np.round(kwargs["price"] * self.cm_.exchangerate, 2)   # !! price converted to EUR !!
-        kwargs["product_id"]        =   product_id_EUR                         # also convert product id to EUR
+        # !! price converted to EUR !!
+        kwargs["price"]             =   np.round(kwargs["price"] * self.cm_.exchangerate, 2)
+        kwargs["product_id"]        =   product_id_EUR  # also convert product id to EUR
 
         trade_request = self.cm_.getclearance(kwargs_dict=kwargs, 
                                               price_trend_0002=trend_fcst_0002, 
-                                              price_trend_002=trend_fcst_002)        # __order_func_clearance (=EUR)
+                                              price_trend_002=trend_fcst_002)
+                                              # __order_func_clearance (=EUR)
 
         if trade_request is True:
             kwargs["size"]          =   np.round(self.cm_.order_size, 3)
             return True, kwargs       
         else:
-            return False, kwargs                                                    # return_ORDER_placer__
+            return False, kwargs    # return_ORDER_placer__
 
 class GAC(gdax.AuthenticatedClient): 
-    def ORDER(self, **kwargs):                                          # __F:caller @__:TRADE_GDAX_ACTUALY
+    def ORDER(self, **kwargs):  # __F:caller @__:TRADE_GDAX_ACTUALY
         kwargs["type"]              =   "limit"
         kwargs["post_only"]         =   True  
         kwargs["time_in_force"]     =   "GTT"
@@ -303,82 +307,85 @@ class GAC(gdax.AuthenticatedClient):
             return rjson
         except KeyError:
             print("-DAXY OP KeyError..")
-            db.insert_one({'MONGOKEY':'ERROR_LOG',
-                           'ERROR_MSG':rjson,
-                           'timestamp':time.time()})
+            db.insert_one({'MONGOKEY'   :   'ERROR_LOG',
+                           'ERROR_MSG'  :   rjson,
+                           'timestamp'  :   time.time()})
 
 class mongowatcher():
     def __init__(self):
-        self.client         = GAC(key=key,b64secret=b64secret,
-                                  passphrase=passphrase,
-                                  api_url="https://api.pro.coinbase.com")
+        self.client         =   GAC(key=key,b64secret=b64secret,
+                                    passphrase=passphrase,
+                                    api_url="https://api.pro.coinbase.com")
     
-        self.op_            = orderpicker(self.client)        
-        self.hbcounter      = time.time()
-        self.ordertimer     = self.hbcounter        
-        self.order_interval = 30
-        self._update        = {'BTC-USD': False,
-                               'ETH-USD': False}
-        self.UPDATE_HANDLER = {'FBP_UPDATE'     :   self.op_.storefbp,
-                               'MARKET_UPDATE'  :   self.op_.storemarket,
-                               'None'           :   self.error_pass}
+        self.op_            =   orderpicker(self.client)        
+        self.hbcounter      =   time.time()
+        self.ordertimer     =   self.hbcounter        
+        self.order_interval =   100 #set to 100 for production
+        self._update        =   {'BTC-USD'        : {'MARKET_UPDATE':False,'FBP_UPDATE':False},
+                                 'ETH-USD'        : {'MARKET_UPDATE':False,'FBP_UPDATE':False}}
+        self.UPDATE_HANDLER =   {'FBP_UPDATE'     : self.op_.storefbp,
+                                 'MARKET_UPDATE'  : self.op_.storemarket,
+                                 'None'           : self.error_pass}
 
     def error_pass(self):
         print('DAXY ERROR_PASS')
 
     def caller(self):
-        NOW = time.time()
-        if NOW - self.hbcounter >= 100:
-            if random.random() > 0.5:
-                order_side="buy"
+        NOW                         =   time.time()
+        if NOW - self.hbcounter     >=  100:
+            if random.random()      >   0.5:
+                order_side          =   "buy"
             else:
-                order_side="sell"
+                order_side          =   "sell"
 
             self.op_.cm_.heartbeat(NOW=NOW, order_side=order_side)                                   # __HB_order_canceller
-            self.hbcounter = NOW
+            self.hbcounter          =   NOW
 
-        if self._update['BTC-USD'] is True and self._update['ETH-USD'] is True \
-                and NOW - self.ordertimer > self.order_interval:
-            if random.random() > 0.60:
+        if all(self._update.values()) is True and NOW - self.ordertimer > self.order_interval:
+            if random.random()      >   0.60:
                 print('+DAXY ORDER LOOP')
-                random_order = np.random.random(2)
+                random_order        =   np.random.random(2)
 
-                if random_order[0] > 0.5:
-                    random_side = 'buy'
+                if random_order[0]  >   0.5:
+                    random_side     =   'buy'
                 else:
-                    random_side = 'sell'
+                    random_side     =   'sell'
 
-                if random_order[1] < 0.65:
-                    random_product = 'BTC-USD'
+                if random_order[1]  <   0.65:
+                    random_product  =   'BTC-USD'
                 else:
-                    random_product = 'ETH-USD' 
+                    random_product  =   'ETH-USD' 
                                 
-                flag, TK = self.op_.makeorder(side=random_side, product_id=random_product)      # __order_func_handler
+                flag, TK            =   self.op_.makeorder(side=random_side, 
+                                                           product_id=random_product)      
+                                                                        # __order_func_handler
 
                 if flag is True:
                     self.client.ORDER(price=TK['price'], side=TK['side'], 
-                                      size=TK['size'], product_id=TK['product_id'])             # __order_func_executer
+                                      size=TK['size'], product_id=TK['product_id'])             
+                                                                        # __order_func_executer
                 else:
                     pass
 
-                self.ordertimer = NOW
+                self.ordertimer     =   NOW
             else:
-                self.ordertimer = NOW
+                self.ordertimer     =   NOW
 
-            self.order_interval = 8
+            self.order_interval     =   8
 
         else:
             pass
 
-    def watcher(self): 
+    def watcher(self):
         try:
             with db.watch(
                     [{'$match':{'operationType': "insert"}},{'$replaceRoot':{'newRoot':'$fullDocument'}},
                      {'$match':{'MONGOKEY':{'$in': ['FBP_UPDATE', 'MARKET_UPDATE']}}}]) as stream:
                 for insert_change in stream:
-                    change_type = insert_change.get('MONGOKEY', 'None') # FBP_UPDATE or MARKET_UPDATE
-                    _update = self.UPDATE_HANDLER[change_type](insert_change)                   # __update_func 
-                    self._update.update({insert_change.get('product_id', 'None'):_update})             
+                    change_type     =   insert_change.get('MONGOKEY', 'None')
+                    product_id      =   insert_change.get('product_id', 'None')
+                    _update         =   self.UPDATE_HANDLER[change_type](insert_change) # __update_func 
+                    self._update.update({product_id:{change_type:_update}})             
         except pymongo.errors.PyMongoError:
             print('DAXY MONGO WATCH ERROR')
             pass
@@ -390,14 +397,14 @@ class mongowatcher():
             time.sleep(1)
 
             exchange_update_counter += 1
-            if exchange_update_counter > 600:                                    # new exchange rate every 10 minutes
-                self.op_.cm_.getexchangerate()                                                  # __update_func_FOREX
+            if exchange_update_counter > 600:   # new exchange rate every 10 minutes
+                self.op_.cm_.getexchangerate()  # __update_func_FOREX
                 exchange_update_counter = 0
                 try:
-                    db.insert_one({'MONGOKEY':'BALANCE',
-                                   'timestamp':time.time(),
-                                   'product_id':'EUR-EUR',
-                                   'balance':self.op_.cm_.balance_longshort})                   # __update_func_BALANCE
+                    db.insert_one({'MONGOKEY'   :   'BALANCE',
+                                   'timestamp'  :   time.time(),
+                                   'product_id' :   'EUR-EUR',
+                                   'balance'    :   self.op_.cm_.balance_longshort})    # __update_func_BALANCE
                 except Exception:
                     pass
 
