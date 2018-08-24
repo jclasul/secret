@@ -28,6 +28,7 @@ class clearingmaster():
     def __init__(self, client):
         self.client             =   client
         self.heartbeat_rate     =   100 # seconds before we auto cancel limit order
+        self.longshort_adj      =   0.5 # 50-50 odds of buy-sell
         self.longthreshold      =   0.35
         self.booster            =   1.00
         self.minimum_order      =   {'BTC-EUR':0.001,'BTC-USD':0.001,
@@ -91,6 +92,14 @@ class clearingmaster():
         self.ratio_long         =   float(balance_long / self.balance_longshort)
         self.ratio_short        =   float(balance_short / self.balance_longshort)  
         self.ratio_long_oke     =   self.ratio_long > self.longthreshold
+
+        if 0.3 < self.ratio_short < 0.65:
+            self.longshort_adj = 0.5
+        elif self.ratio_short < 0.3:
+            self.longshort_adj  =   np.maximum(self.ratio_short, 0.05)
+        elif self.ratio_short > 0.65:
+            self.longshort_adj  =   0.7
+        
         print('=/DAXY CM GB l:{:0.2f} s:{:0.2f} = {}'.format(self.ratio_long, self.ratio_short, self.ratio_long_oke))
         #print('DAXY DEBUG', self.df_balances)
 
@@ -375,7 +384,7 @@ class mongowatcher():
                 print('+DAXY ORDER LOOP')
                 random_order        =   np.random.random(2)
 
-                if random_order[0]  >   0.5:
+                if random_order[0]  >   self.op_.cm_.longshort_adj:
                     random_side     =   'buy'
                 else:
                     random_side     =   'sell'
