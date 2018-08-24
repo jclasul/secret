@@ -121,15 +121,16 @@ class clearingmaster():
                 .format(kwargs_dict['side'], self.requestedprice, self.requestedprice / self.exchangerate))
         except KeyError:
             print('=/DAXY CM GC {} KeyError'.format(kwargs_dict["side"]))
-            return False, None, None, None
+            return False, 0, 0, 0
 
         if self.requestedprice < self.historicrates[product_id] * 0.8:
-            return False, None, None, None
+            return False, 0, 0, 0
         
         return True, orderprice, funds_available_eur, funds_available_crypto
 
     def getclearance(self, kwargs_dict, price_trend_0002, price_trend_002): # __F:makeorder @__:getclearance_balance
-        order_side              =   kwargs_dict.get('side', None)        
+        order_side              =   kwargs_dict.get('side', None)     
+        product_id              =   kwargs_dict["product_id"]   
         self.requestedprice     =   kwargs_dict.get("price", 0) #price already in EUR
 
         print('=/DAXY CM GC {}'.format(kwargs_dict['side']))
@@ -155,14 +156,14 @@ class clearingmaster():
                 return_, orderprice, funds_available_eur, funds_available_crypto \
                                 = self.getclearance_balances(kwargs_dict)   # __order_func_balance
 
-                if funds_available_crypto > 0.001:                
+                if funds_available_crypto > self.minimum_order[product_id]:                
                     return True
                 else:
                     NA = 'unsufficient funds: {:0.0f} CRYPTO'.format(funds_available_crypto)
             else:
                 NA = 'above trend {:0.0f} EUR'.format(price_trend_0002)
         
-        print('=/DAXY CM GC {} NA = {}'.format(kwargs_dict["side"], NA))
+        print('=/DAXY CM GC {} NA = {}'.format(order_side, NA))
         return False
 
     def heartbeat(self, **kwargs):  # __F:caller @__:getorders
