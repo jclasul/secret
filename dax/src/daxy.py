@@ -432,8 +432,11 @@ class mongowatcher():
     def caller_wrapper(self):
         exchange_update_counter = 0
         while True:
-            self.caller()
-            time.sleep(1)
+            try:
+                self.caller()
+                time.sleep(1)
+            except Exception:
+                sys.exit(0)
 
             exchange_update_counter += 1
             if exchange_update_counter > 600:   # new exchange rate every 10 minutes
