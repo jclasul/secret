@@ -264,16 +264,6 @@ class orderpicker():
         trend_fcst_002              =   self.trend_fcst_002[product_id]     *   self.cm_.exchangerate    
 
         print('+DAXY {} ORDER {} - Tcnt:{}'.format(product_id, order_side, self.trend_002_counter[product_id_adj]))
-
-        if 120 < self.trend_002_counter[product_id_adj] < 200:
-            print('==DAXY long trend exposure adjustment')
-            if order_side == "sell":
-                kwargs["price"] = lastknowprice * 1.0005
-            else:
-                kwargs["price"] = lastknowprice * 0.9995
-        elif self.trend_002_counter[product_id_adj] > 200:
-            print('==|DAXY end of long term trend exposure adjustment')
-            self.trend_002_counter[product_id_adj] = 0
         
         if order_side == "sell" and self.trend_002_counter[product_id_adj] < 120:
             if yhat_upper_fcst_002 <= lastknowprice:   # make price __SELL
@@ -299,6 +289,19 @@ class orderpicker():
             else:
                 kwargs["price"]         =   yhat_lower_fcst_002 * r
                 self.trend_002_counter[product_id_adj] = 0
+
+        if 120 < self.trend_002_counter[product_id_adj] < 200:
+            print('==DAXY long trend exposure adjustment')
+            if order_side == "sell":
+                kwargs["price"] = lastknowprice * 1.00325
+                self.trend_002_counter[product_id_adj] += 1  
+            else:
+                kwargs["price"] = lastknowprice * 0.9995
+                self.trend_002_counter[product_id_adj] += 1  
+
+        if self.trend_002_counter[product_id_adj] > 200:
+            print('==|DAXY end of long term trend exposure adjustment')
+            self.trend_002_counter[product_id_adj] = 0
 
         # !! price converted to EUR !!
         kwargs["price"]             =   np.round(kwargs["price"] * self.cm_.exchangerate, 2)
@@ -429,8 +432,11 @@ class mongowatcher():
     def caller_wrapper(self):
         exchange_update_counter = 0
         while True:
-            self.caller()
-            time.sleep(1)
+            try:
+                self.caller()
+                time.sleep(1)
+            except Exception:
+                sys.exit(0)
 
             exchange_update_counter += 1
             if exchange_update_counter > 600:   # new exchange rate every 10 minutes
