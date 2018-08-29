@@ -436,6 +436,10 @@ class mongowatcher():
                 self.caller()
                 time.sleep(1)
             except Exception:
+                db.insert_one({'MONGOKEY'   :   'BALANCE',
+                               'timestamp'  :   time.time(),
+                               'product_id' :   'EUR-ERROR',
+                               'balance'    :   self.op_.cm_.balance_longshort})  
                 sys.exit(0)
 
             exchange_update_counter += 1
