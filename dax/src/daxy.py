@@ -29,7 +29,7 @@ class clearingmaster():
         self.client             =   client
         self.heartbeat_rate     =   100 # seconds before we auto cancel limit order
         self.longshort_adj      =   0.5 # 50-50 odds of buy-sell
-        self.longthreshold      =   0.35
+        self.longthreshold      =   0.1
         self.booster            =   1.00
         self.minimum_order      =   {'BTC-EUR':0.001,'BTC-USD':0.001,
                                      'ETH-EUR':0.01,'ETH-USD':0.01}
@@ -97,7 +97,7 @@ class clearingmaster():
             self.longshort_adj = 0.5
         elif self.ratio_short < 0.3:
             self.longshort_adj  =   np.maximum(self.ratio_short, 0.05)
-        elif self.ratio_short > 0.65:
+        elif self.ratio_short > 0.5:
             self.longshort_adj  =   0.7
         
         print('=/DAXY CM GB l:{:0.2f} s:{:0.2f} = {}'.format(self.ratio_long, self.ratio_short, self.ratio_long_oke))
@@ -265,7 +265,11 @@ class orderpicker():
 
         print('+DAXY {} ORDER {} - Tcnt:{}'.format(product_id, order_side, self.trend_002_counter[product_id_adj]))
         
-        if order_side == "sell" and self.trend_002_counter[product_id_adj] < 120:
+        if self.trend_002_counter[product_id_adj] > 140:
+            print('==|DAXY end of long term trend exposure adjustment')
+            self.trend_002_counter[product_id_adj] = 0
+            
+        if order_side == "sell" and self.trend_002_counter[product_id_adj] < 140:
             if yhat_upper_fcst_002 <= lastknowprice:   # make price __SELL
                 print('=DAXY upper 002 broken')
                 self.trend_002_counter[product_id_adj] += 1                
@@ -290,18 +294,14 @@ class orderpicker():
                 kwargs["price"]         =   yhat_lower_fcst_002 * r
                 self.trend_002_counter[product_id_adj] = 0
 
-        if 120 < self.trend_002_counter[product_id_adj] < 200:
+        if 60 < self.trend_002_counter[product_id_adj] < 100:
             print('==DAXY long trend exposure adjustment')
             if order_side == "sell":
-                kwargs["price"] = lastknowprice * 1.00325
+                kwargs["price"] = lastknowprice * 1.0001
                 self.trend_002_counter[product_id_adj] += 1  
             else:
-                kwargs["price"] = lastknowprice * 0.9995
+                kwargs["price"] = lastknowprice * 0.9999
                 self.trend_002_counter[product_id_adj] += 1  
-
-        if self.trend_002_counter[product_id_adj] > 200:
-            print('==|DAXY end of long term trend exposure adjustment')
-            self.trend_002_counter[product_id_adj] = 0
 
         # !! price converted to EUR !!
         kwargs["price"]             =   np.round(kwargs["price"] * self.cm_.exchangerate, 2)
