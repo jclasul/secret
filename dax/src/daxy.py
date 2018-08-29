@@ -265,19 +265,20 @@ class orderpicker():
 
         print('+DAXY {} ORDER {} - Tcnt:{}'.format(product_id, order_side, self.trend_002_counter[product_id_adj]))
         
-        if self.trend_002_counter[product_id_adj] > 140:
+        if self.trend_002_counter[product_id_adj] > 80:
             print('==|DAXY end of long term trend exposure adjustment')
             self.trend_002_counter[product_id_adj] = 0
             
-        if order_side == "sell" and self.trend_002_counter[product_id_adj] < 140:
+        if order_side == "sell" and self.trend_002_counter[product_id_adj] < 50:
             if yhat_upper_fcst_002 <= lastknowprice:   # make price __SELL
                 print('=DAXY upper 002 broken')
                 self.trend_002_counter[product_id_adj] += 1                
                 self.cm_.heartbeat(heartbeat_rate=5, product_id=product_id_EUR, order_side=order_side)  
                 kwargs["price"]         =   lastknowprice * 1.00225
-            elif self.cm_.ratio_short > 0.55:
+            elif self.cm_.ratio_short > 0.40:
                 print('=DAXY ratio short too high, reducing exposure')
-                kwargs["price"]         =   ((trend_fcst_002 - yhat_upper_fcst_002)/5 * random.random()) + yhat_upper_fcst_002
+                kwargs["price"]         =   yhat_upper_fcst_002
+                self.trend_002_counter[product_id_adj] = 0
             else:
                 kwargs["price"]         =   yhat_upper_fcst_002 * r
                 self.trend_002_counter[product_id_adj] = 0
@@ -289,12 +290,13 @@ class orderpicker():
                 kwargs["price"]         =   lastknowprice * 0.99626401  
             elif self.cm_.ratio_short < 0.3:
                 print("=DAXY ratio long low, increasing exposure")
-                kwargs["price"]         =   ((trend_fcst_002 - yhat_lower_fcst_002)/3 * random.random()) + yhat_lower_fcst_002
+                kwargs["price"]         =   yhat_lower_fcst_002
+                self.trend_002_counter[product_id_adj] = 0
             else:
                 kwargs["price"]         =   yhat_lower_fcst_002 * r
                 self.trend_002_counter[product_id_adj] = 0
 
-        if 60 < self.trend_002_counter[product_id_adj] < 100:
+        if 50 < self.trend_002_counter[product_id_adj] < 80:
             print('==DAXY long trend exposure adjustment')
             if order_side == "sell":
                 kwargs["price"] = lastknowprice * 1.0001
